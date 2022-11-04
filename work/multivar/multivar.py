@@ -114,14 +114,3 @@ with open("./exper_result.csv", mode="a") as f:
             exper_iter, optim_iter, L, init_loc, std]
     l = list(map(str, l))
     f.writelines(" ,".join(l))
-
-# l =  [file_name, average_loss ,n, eps, data_dim,
-#             mu, mu_out,
-#             par_reg1, learn_par, dicay_par,
-#             exper_iter, optim_iter, L]
-# l = list(map(str, l))
-# l = " ,".join(l)
-# import csv
-# with open("./exper_result.csv", "w") as f:
-#     writer = csv.writer(f)
-
