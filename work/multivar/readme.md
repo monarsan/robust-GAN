@@ -1,4 +1,4 @@
-# 各ファイルの説明
+# Description of each file
 ## multivar.ipynb
 - For demonstoration
 ## multivar.py
