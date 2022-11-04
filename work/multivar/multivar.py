@@ -104,14 +104,6 @@ for i in range(exper_iter):
 average_loss = str(np.mean(mean))[:6]
 std = str(np.std(mean))[:6]
 
-with open("./exper_result.tex", mode="a") as f:
-    f.write("\n")
-    l =  [file_name, average_loss ,n, eps, data_dim,
-            mu, mu_out,
-            par_reg1, learn_par, dicay_par,
-            exper_iter, optim_iter, L, init_loc, std]
-    l = list(map(str, l))
-    f.writelines(" ,".join(l))
 
 
 with open("./exper_result.csv", mode="a") as f:
