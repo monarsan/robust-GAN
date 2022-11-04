@@ -14,8 +14,8 @@ init_loc="0"
 
 
 #Do python
-for n in 100 1000 2000 3000
+for n in 1000 2000 3000 5000
 do
-    python3 ./multivar_complex_u.py "$n" "$eps" "$data_dim" "$mu" "$mu_out" "$exper_iter" "$optim_iter" "$mm_iter" "$optim_method" "$decay_par" "$par_reg1" "$lr" "$init_loc"
+    python3 ./multivar.py "$n" "$eps" "$data_dim" "$mu" "$mu_out" "$exper_iter" "$optim_iter" "$mm_iter" "$optim_method" "$decay_par" "$par_reg1" "$lr" "$init_loc"
 done
 
