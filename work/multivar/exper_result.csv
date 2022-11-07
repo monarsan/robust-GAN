@@ -1,4 +1,4 @@
-experiment_id, loss_mean, sample_size, contamination_rate, data_dim, mu, mu_out, par_reg1, learn_par, dicay_par, exper_iter, optim_iter, mm_iter, init_loc_of_u, loss_std
+experiment_id, loss_mean, sample_size, contamination_rate, data_dim, mu, mu_out, par_reg1, learn_par, dicay_par, exper_iter, optim_iter, mm_iter, init_loc_of_u, loss_std, date, time
 5 ,0.1786 ,1000 ,0.1 ,2 ,5.0 ,0.0 ,0.0005 ,1 ,0.5 ,10 ,500 ,1
 6 ,0.2270 ,1000 ,0.1 ,2 ,5.0 ,0.0 ,0.0005 ,1 ,0.5 ,10 ,500 ,2
 7 ,0.2795 ,1000 ,0.1 ,2 ,5.0 ,0.0 ,0.0005 ,1 ,0.5 ,10 ,500 ,3
@@ -40,3 +40,6 @@ experiment_id, loss_mean, sample_size, contamination_rate, data_dim, mu, mu_out,
 37 ,0.1074 ,1000 ,0.1 ,5 ,0.0 ,5.0 ,0.0005 ,0.05 ,0.5 ,10 ,500 ,1 ,0.0 ,0.0376
 38 ,0.1489 ,1000 ,0.1 ,10 ,0.0 ,5.0 ,0.0005 ,0.05 ,0.5 ,10 ,500 ,1 ,0.0 ,0.0421
 40 ,0.2096 ,1000 ,0.1 ,10 ,5.0 ,0.0 ,0.0005 ,0.05 ,0.5 ,10 ,500 ,1 ,0.0 ,0.0930
+41 ,0.2414 ,1000 ,0.1 ,10 ,5.0 ,0.0 ,0.0005 ,0.05 ,0.5 ,10 ,500 ,1 ,0.0 ,0.1065
+42 ,0.1093 ,1000 ,0.1 ,2 ,5.0 ,0.0 ,0.0005 ,0.05 ,0.5 ,20 ,500 ,1 ,0.0 ,0.0769 ,2022-11-05 , 23:05
+43 ,0.1661 ,1000 ,0.1 ,10 ,5.0 ,0.0 ,0.0005 ,0.05 ,0.5 ,5 ,500 ,1 ,0.0 ,0.0533 ,2022-11-06 , 00:01
