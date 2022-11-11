@@ -57,10 +57,12 @@ for i in range(exper_iter):
     alpha_hist = []
     par_hist = []
     alpha = [np.median(data, axis=0), np.identity(data_dim)]
-    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim + 1)
+
+    #par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim + 1)
+    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim); bias = np.zeros(1)
+    par = np.concatenate([par, bias], axis = 0)
     for j in tqdm(range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1], size = m)
-
         def major_func(par, past_par):
             new_beta = par[0:2*data_dim]; new_b = par[2*data_dim]; beta = past_par[0:2*data_dim]; b = past_par[2*data_dim]
             A = np.mean(g_lo(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),new_beta) - new_b, np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),beta) - b))
