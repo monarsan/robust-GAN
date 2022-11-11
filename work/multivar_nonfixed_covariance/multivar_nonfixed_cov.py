@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.linalg as LA
 import scipy
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
@@ -10,10 +11,10 @@ from sys import argv
 
 
 # nearPD(A) calc projection of A to pd
-import numpy as np,numpy.linalg
+import numpy as np
 
 def _getAplus(A):
-    eigval, eigvec = np.linalg.eig(A)
+    eigval, eigvec = LA.eig(A)
     Q = np.matrix(eigvec)
     xdiag = np.matrix(np.diag(np.maximum(eigval, 0)))
     return Q*xdiag*Q.T
@@ -52,14 +53,17 @@ mu_out = float(argv[5])
 par_mu = np.full(data_dim, mu)
 par_sd = np.identity(data_dim)
 out_mu = np.full(data_dim, mu_out)
+out_sd = np.identity(data_dim)
 true_alpha = [par_mu, par_sd]
 
 exper_iter = int(argv[6])
 optim_iter = int(argv[7])
 L = int(argv[8])
 optim_method = str(argv[9])
-learn_par = 1
-dicay_par = 0.5
+dicay_par = float(argv[10])
+par_reg1=float(argv[11])
+learn_par = float(argv[12])
+init_loc=float(argv[13])
 
 def sigmoid(x):
     return 1/(np.exp(-x) + 1)
@@ -83,15 +87,16 @@ def create_out_cov(data_dim):
             gamma = np.random.binomial(n = 1,p=0.1)
             return_cov[i][j] = z*gamma
             return_cov[j][i] = z*gamma
-    return_cov = return_cov +(np.abs(np.linalg.eig(return_cov)[0]) +0.05)*np.eye(data_dim)
+    return_cov = return_cov +(np.abs(LA.eig(return_cov)[0]) +0.05)*np.eye(data_dim)
     return return_cov
 
 
 # 分散を固定しない
-out_cov = create_out_cov(data_dim)
+out_cov = np.eye(data_dim) #create_out_cov(data_dim)
 res_mean = [0 for i in range(exper_iter)]
 res_cov = [0 for i in range(exper_iter)]
-for i in tqdm(range(exper_iter)):
+res_par = [0 for i in range(exper_iter)]
+for i in (range(exper_iter)):
     data = np.random.multivariate_normal(mean = par_mu, cov = par_sd, size = int(n*(1-eps)))
     # Gaoの論文の設定
     print("%d/%d" %(i+1, exper_iter))
@@ -100,17 +105,20 @@ for i in tqdm(range(exper_iter)):
     np.random.shuffle(data)
     mean_hist = []
     cov_hist = []
+    par_hist = []
     # 平均は次元ごとにロバスト、分散はロバストでない
     alpha = [np.median(data, axis=0), np.cov(data, rowvar = False)]
+    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim + 1)
     for j in (range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=-np.identity(data_dim), size = m)
         def major_func(par, past_par):
             new_beta = par[0:2*data_dim]; new_b = par[2*data_dim]; beta = past_par[0:2*data_dim]; b = past_par[2*data_dim]
             A = np.mean(g_lo(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),new_beta) - new_b, np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),beta) - b))
             B = np.mean(g_up(np.dot(np.stack([data, data**2], axis=1).reshape(n, 2*data_dim),new_beta) - new_b, np.dot(np.stack([data, data**2], axis=1).reshape(n, 2*data_dim),beta) - b))
-            return -(A-B)
+            reg = LA.norm(new_beta, ord=2)*par_reg1
+            return -(A-B - reg)
 
-        l = 0; par = np.random.normal(scale = 0.1, size = 2*data_dim + 1)
+        l = 0
         while(l<L):
             op = minimize(major_func, x0 = np.zeros(2*data_dim +1), args = par,  method=optim_method)
             par = op.x
@@ -125,14 +133,49 @@ for i in tqdm(range(exper_iter)):
         alpha[0], alpha[1] = tmp_alpha_m, tmp_alpha_v
         mean_hist.append(alpha[0])
         cov_hist.append(alpha[1])
+        par_hist.append(par)
     res_mean[i] = mean_hist
     res_cov[i] = cov_hist
+    res_par[i] = par_hist
 
 
-save_dir_name = str(argv[10])
-file_name = "exp_multivar_nonfixed_cov/"+save_dir_name+"/n-"+str(n)+"-eps-"+str(eps*100)+"-p-"+str(data_dim)
+import os
+file_name=0
+while True:
+    path = "result/mean"+str(file_name)+".npy"
+    if not os.path.isfile(path):
+        break
+    file_name+=1
 
-np.save(file_name+"mean.npy" ,np.array(res_mean))
-np.save(file_name+"cov.npy" ,np.array(res_cov))
-np.save(file_name+"out_cov.npy" ,np.array(out_cov))
-print("file saved to "+ file_name)
+
+np.save(path,np.array(res_mean))
+path = "result/cov"+str(file_name)+".npy"
+np.save(path,np.array(res_cov))
+path = "result/par"+str(file_name)+".npy"
+np.save(path,np.array(res_par))
+
+mean = []; npmu = np.array(res_mean); cov = []; npcov=np.array(res_cov)
+for i in range(exper_iter):
+    loss_mean = LA.norm(npmu[i]-par_mu, ord = 2, axis=1)
+    mean.append(loss_mean[-1])
+    
+for i in range(exper_iter):
+    loss_cov = LA.norm(npcov[i]-np.eye(data_dim), axis=1)
+    cov.append(loss_cov[-1])
+
+average_loss_mean = str(np.mean(mean))[:6]
+average_loss_cov = str(np.mean(cov))[:6]
+std = str(np.std(mean))[:6]
+
+import datetime
+date = str(datetime.datetime.now())[:-10][:10]
+time = str(datetime.datetime.now())[:-10][10:]
+
+with open("./exper_result.csv", mode="a") as f:
+    f.write("\n")
+    l =  [file_name, average_loss_mean, average_loss_cov ,n, eps, data_dim,
+            mu, mu_out,
+            par_reg1, learn_par, dicay_par,
+            exper_iter, optim_iter, L, init_loc, std,date, time]
+    l = list(map(str, l))
+    f.writelines(" ,".join(l))
