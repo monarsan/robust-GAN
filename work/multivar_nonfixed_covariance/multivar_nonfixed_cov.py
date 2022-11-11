@@ -108,7 +108,10 @@ for i in (range(exper_iter)):
     par_hist = []
     # 平均は次元ごとにロバスト、分散はロバストでない
     alpha = [np.median(data, axis=0), np.cov(data, rowvar = False)]
-    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim + 1)
+    z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1], size = m)
+    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim)
+    bias = np.array(np.mean(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim])))[np.newaxis]
+    par = np.concatenate([par, bias], axis = 0)
     for j in (range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=-np.identity(data_dim), size = m)
         def major_func(par, past_par):
@@ -160,7 +163,7 @@ for i in range(exper_iter):
     mean.append(loss_mean[-1])
     
 for i in range(exper_iter):
-    loss_cov = LA.norm(npcov[i]-np.eye(data_dim), axis=1)
+    loss_cov = LA.norm(npcov[i]-np.eye(data_dim), axis=(1,2))
     cov.append(loss_cov[-1])
 
 average_loss_mean = str(np.mean(mean))[:6]
