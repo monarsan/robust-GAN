@@ -70,7 +70,8 @@ for i in range(exper_iter):
 
         l = 0; 
         while(l<L):
-            op = minimize(major_func, x0 = np.zeros(2*data_dim +1), args = par, method=optim_method)
+            op = minimize(major_func, x0 = par, args = par, method=optim_method)
+            # op = minimize(major_func, x0 = np.zeros(2*data_dim +1), args = par, method=optim_method)
             par = op.x
             l+=1
             
