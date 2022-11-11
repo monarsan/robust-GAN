@@ -112,7 +112,7 @@ for i in (range(exper_iter)):
     par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim)
     bias = np.array(np.mean(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim])))[np.newaxis]
     par = np.concatenate([par, bias], axis = 0)
-    for j in (range(1, optim_iter+1)):
+    for j in tqdm(range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=-np.identity(data_dim), size = m)
         def major_func(par, past_par):
             new_beta = par[0:2*data_dim]; new_b = par[2*data_dim]; beta = past_par[0:2*data_dim]; b = past_par[2*data_dim]
