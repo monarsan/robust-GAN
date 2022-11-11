@@ -1,8 +1,6 @@
 import numpy as np
 import numpy.linalg as LA
-import scipy
 from scipy.optimize import minimize
-import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 from tqdm import tqdm
