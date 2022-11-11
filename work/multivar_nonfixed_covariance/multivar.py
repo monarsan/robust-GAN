@@ -57,7 +57,11 @@ for i in range(exper_iter):
     alpha_hist = []
     par_hist = []
     alpha = [np.median(data, axis=0), np.identity(data_dim)]
-    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim + 1)
+    z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1], size = m)
+    par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim)
+    bias = np.array(np.mean(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim])))[np.newaxis]
+    par = np.concatenate([par, bias], axis = 0)
+
     for j in tqdm(range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1], size = m)
 
