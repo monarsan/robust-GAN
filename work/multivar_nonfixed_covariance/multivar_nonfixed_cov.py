@@ -111,7 +111,7 @@ for i in (range(exper_iter)):
     bias = np.array(np.mean(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim])))[np.newaxis]
     par = np.concatenate([par, bias], axis = 0)
     for j in tqdm(range(1, optim_iter+1)):
-        z = np.random.multivariate_normal(mean=alpha[0], cov=-np.identity(data_dim), size = m)
+        z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1] , size = m)
         def major_func(par, past_par):
             new_beta = par[0:2*data_dim]; new_b = par[2*data_dim]; beta = past_par[0:2*data_dim]; b = past_par[2*data_dim]
             A = np.mean(g_lo(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),new_beta) - new_b, np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),beta) - b))
@@ -121,17 +121,19 @@ for i in (range(exper_iter)):
 
         l = 0
         while(l<L):
-            op = minimize(major_func, x0 = np.zeros(2*data_dim +1), args = par,  method=optim_method)
+            op = minimize(major_func, x0 = par, args = par,  method=optim_method)
             par = op.x
             l+=1
         
         alpha_m = alpha[0]; alpha_v = alpha[1]
-        mgrad = (z-alpha_m)
-        sigma_grad = z[:,:,np.newaxis] * z[:, np.newaxis, :] - alpha_v
+        v_inv = np.linalg.inv(alpha_v)
+        mgrad = (v_inv*(z-alpha_m)[:, np.newaxis, :]).sum(axis=2)
+        sigma_grad = (alpha_v - (z- alpha_m)[:,:,np.newaxis] * (z-alpha_m)[:, np.newaxis, :])/2
         sig_ = sigmoid(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim ])- par[2*data_dim])[:,np.newaxis]
         tmp_alpha_m = alpha[0] - learn_par/j**dicay_par * np.mean(mgrad*sig_, axis = 0)
-        tmp_alpha_v = alpha[1] - learn_par/j**dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
-        alpha[0], alpha[1] = tmp_alpha_m, tmp_alpha_v
+        tmp_alpha_v = v_inv - learn_par/j**dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
+        alpha[0], alpha[1] = tmp_alpha_m, (LA.inv(tmp_alpha_v))
+
         mean_hist.append(alpha[0])
         cov_hist.append(alpha[1])
         par_hist.append(par)
