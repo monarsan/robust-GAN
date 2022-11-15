@@ -1,5 +1,5 @@
 import sys
-sys.path.append("../libs")
+sys.path.append("../")
 import numpy as np
 import numpy.linalg as LA
 from scipy.optimize import minimize
@@ -8,8 +8,8 @@ warnings.filterwarnings('ignore')
 from tqdm import tqdm
 from numpy.lib.function_base import cov
 from sys import argv
-from functions import sigmoid, g_lo, g_up, nearPD
-from create import create_out_cov, create_norm_data
+from libs.functions import sigmoid, g_lo, g_up, nearPD
+from libs.create import create_out_cov, create_norm_data
 
 n = int(argv[1])
 m = 3*n
