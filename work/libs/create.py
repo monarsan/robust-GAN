@@ -15,8 +15,8 @@ def create_out_cov(data_dim):
 
 def create_norm_data(data_size, eps, true_mu, true_cov, out_mu, out_cov):
     data_size_true_dist = np.random.binomial(data_size, 1-eps)
-    data_target = np.random.multinomial(mean = true_mu, cop = true_cov, size = data_size_true_dist)
-    data_contami = np.random.multinomial(mean = out_mu, cov = out_cov, size = data_size - data_size_true_dist)
+    data_target = np.random.multivariate_normal(mean = true_mu, cov = true_cov, size = data_size_true_dist)
+    data_contami = np.random.multivariate_normal(mean = out_mu, cov = out_cov, size = data_size - data_size_true_dist)
     data = np.concatenate([data_target, data_contami], axis=0)
     np.random.shuffle(data)
     return data

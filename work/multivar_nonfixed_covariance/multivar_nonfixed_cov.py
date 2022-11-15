@@ -1,3 +1,5 @@
+import sys
+sys.path.append("../libs")
 import numpy as np
 import numpy.linalg as LA
 from scipy.optimize import minimize
@@ -6,42 +8,8 @@ warnings.filterwarnings('ignore')
 from tqdm import tqdm
 from numpy.lib.function_base import cov
 from sys import argv
-from ..libs.functions import sigmoid, g_lo, g_up
-
-
-# nearPD(A) calc projection of A to pd
-import numpy as np
-
-def _getAplus(A):
-    eigval, eigvec = LA.eig(A)
-    Q = np.matrix(eigvec)
-    xdiag = np.matrix(np.diag(np.maximum(eigval, 0)))
-    return Q*xdiag*Q.T
-
-def _getPs(A, W=None):
-    W05 = np.matrix(W**.5)
-    return  W05.I * _getAplus(W05 * A * W05) * W05.I
-
-def _getPu(A, W=None):
-    Aret = np.array(A.copy())
-    Aret[W > 0] = np.array(W)[W > 0]
-    return np.matrix(Aret)
-
-def nearPD(A, nit=10):
-    n = A.shape[0]
-    W = np.identity(n) 
-# W is the matrix used for the norm (assumed to be identity matrix here)
-# the algorithm should work for any diagonal W
-    deltaS = 0
-    Yk = A.copy()
-    for k in range(nit):
-        Rk = Yk - deltaS
-        Xk = _getPs(Rk, W=W)
-        deltaS = Xk - Rk
-        Yk = _getPu(Xk, W=W)
-    return np.array(Yk)
-
-
+from functions import sigmoid, g_lo, g_up, nearPD
+from create import create_out_cov, create_norm_data
 
 n = int(argv[1])
 m = 3*n
@@ -64,31 +32,6 @@ par_reg1=float(argv[11])
 learn_par = float(argv[12])
 init_loc=float(argv[13])
 
-def sigmoid(x):
-    return 1/(np.exp(-x) + 1)
-
-def deriv_sigmoid(x):
-    return sigmoid(x)*(1-sigmoid(x))
-
-def g_up(t, s):
-    return sigmoid(s) + deriv_sigmoid(s)*(t-s) + (t-s)**2/20
-
-def g_lo(t, s):
-    return sigmoid(s) + deriv_sigmoid(s)*(t-s) - (t-s)**2/20
-
-
-
-def create_out_cov(data_dim):
-    return_cov = np.zeros([data_dim, data_dim])
-    for i in range(data_dim):
-        for j in range(i+1):
-            z = np.random.uniform(0.4, 0.8)
-            gamma = np.random.binomial(n = 1,p=0.1)
-            return_cov[i][j] = z*gamma
-            return_cov[j][i] = z*gamma
-    return_cov = return_cov +(np.abs(LA.eig(return_cov)[0]) +0.05)*np.eye(data_dim)
-    return return_cov
-
 
 # 分散を固定しない
 out_cov = np.eye(data_dim) #create_out_cov(data_dim)
@@ -96,27 +39,29 @@ res_mean = [0 for i in range(exper_iter)]
 res_cov = [0 for i in range(exper_iter)]
 res_par = [0 for i in range(exper_iter)]
 for i in (range(exper_iter)):
-    data = np.random.multivariate_normal(mean = par_mu, cov = par_sd, size = int(n*(1-eps)))
-    # Gaoの論文の設定
-    print("%d/%d" %(i+1, exper_iter))
-    contamination = np.random.multivariate_normal(mean = out_mu, cov = out_cov, size = (n - int(n*(1-eps))))
-    data = np.concatenate([data, contamination])
-    np.random.shuffle(data)
+    data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
     mean_hist = []
     cov_hist = []
     par_hist = []
     # 平均は次元ごとにロバスト、分散はロバストでない
     alpha = [np.median(data, axis=0), np.cov(data, rowvar = False)]
     z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1], size = m)
+
+    def discriminator(x, beta):
+        size, data_dim = x.shape[0], x.shape[-1]
+        stack = [x, x**2]
+        value = np.dot(np.stack(stack, axis=1).reshape(size, len(stack)*data_dim),beta)
+        return value
+
     par = np.random.normal(loc = 0, scale = 0.1, size = 2*data_dim)
-    bias = np.array(np.mean(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim])))[np.newaxis]
+    bias = np.array(np.mean( discriminator(z, par[0:2*data_dim]) ))[np.newaxis]
     par = np.concatenate([par, bias], axis = 0)
     for j in tqdm(range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1] , size = m)
         def major_func(par, past_par):
             new_beta = par[0:2*data_dim]; new_b = par[2*data_dim]; beta = past_par[0:2*data_dim]; b = past_par[2*data_dim]
-            A = np.mean(g_lo(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),new_beta) - new_b, np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),beta) - b))
-            B = np.mean(g_up(np.dot(np.stack([data, data**2], axis=1).reshape(n, 2*data_dim),new_beta) - new_b, np.dot(np.stack([data, data**2], axis=1).reshape(n, 2*data_dim),beta) - b))
+            A = np.mean(g_lo(discriminator(z, new_beta) - new_b, discriminator(z, beta) - b))
+            B = np.mean(g_up(discriminator(data, new_beta) - new_b, discriminator(data, beta) - b))
             reg = LA.norm(new_beta, ord=2)*par_reg1
             return -(A-B - reg)
 
@@ -130,7 +75,7 @@ for i in (range(exper_iter)):
         v_inv = np.linalg.inv(alpha_v)
         mgrad = (v_inv*(z-alpha_m)[:, np.newaxis, :]).sum(axis=2)
         sigma_grad = (alpha_v - (z- alpha_m)[:,:,np.newaxis] * (z-alpha_m)[:, np.newaxis, :])/2
-        sig_ = sigmoid(np.dot(np.stack([z, z**2], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim ])- par[2*data_dim])[:,np.newaxis]
+        sig_ = sigmoid(discriminator(z, par[:2*data_dim]) - par[2*data_dim])[:,np.newaxis]
         tmp_alpha_m = alpha[0] - learn_par/j**dicay_par * np.mean(mgrad*sig_, axis = 0)
         tmp_alpha_v = v_inv - learn_par/j**dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
         alpha[0], alpha[1] = tmp_alpha_m, (LA.inv(tmp_alpha_v))
