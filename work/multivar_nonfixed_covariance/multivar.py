@@ -1,9 +1,5 @@
-from ast import arg
-from genericpath import isfile
 import numpy as np
-import scipy
 from scipy.optimize import minimize
-import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 from tqdm import tqdm
