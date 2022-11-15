@@ -1,0 +1,1 @@
+experiment_id, loss_mean, sample_size, contamination_rate, data_dim, mu, mu_out, par_reg1, learn_par, dicay_par, exper_iter, optim_iter, mm_iter, init_loc_of_u, loss_std, date, time
