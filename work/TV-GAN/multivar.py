@@ -35,6 +35,7 @@ optim_method = str(argv[9])
 dicay_par = float(argv[10])
 par_reg1=float(argv[11])
 learn_par = float(argv[12])
+learn_par_u = float(argv[14])
 init_loc=float(argv[13])
 par_cov, out_cov = np.eye(data_dim), np.eye(data_dim)
 
@@ -75,7 +76,7 @@ for i in range(exper_iter):
         l = 0
         while(l<L):
             op = minimize(major_func, x0 = par, args = par)
-            par = op.x
+            par = op.x *learn_par_u + par*(1-learn_par_u)
             l+=1
         
         alpha_m = alpha[0]; alpha_v = alpha[1]
@@ -99,11 +100,11 @@ while True:
     file_name+=1
 
 
-np.save(path,np.array(res))
+np.save(path,np.array(res_mean))
 path = "result/par"+str(file_name)+".npy"
 np.save(path,np.array(res_par))
 
-mean = []; npmu = np.array(res)
+mean = []; npmu = np.array(res_mean)
 for i in range(exper_iter):
     loss = np.linalg.norm(npmu[i]-par_mu, ord = 2, axis=1)
     mean.append(loss[-1])
@@ -119,6 +120,6 @@ with open("./exper_result.csv", mode="a") as f:
     l =  [file_name, average_loss ,n, eps, data_dim,
             mu, mu_out,
             par_reg1, learn_par, dicay_par,
-            exper_iter, optim_iter, L, init_loc, std,date, time ]
+            exper_iter, optim_iter, L, init_loc, std,date, time, learn_par_u ]
     l = list(map(str, l))
     f.writelines(" ,".join(l))
