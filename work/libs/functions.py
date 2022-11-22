@@ -4,6 +4,7 @@ import numpy as np
 def sigmoid(x):
     return 1/(np.exp(-x) + 1)
 
+
 def deriv_sigmoid(x):
     return sigmoid(x)*(1-sigmoid(x))
 
@@ -13,6 +14,9 @@ def g_up(t, s):
 def g_lo(t, s):
     return sigmoid(s) + deriv_sigmoid(s)*(t-s) - (t-s)**2/20
 
+def sample_wise_vec_mat_vec(A, x):
+    r = (x[:,np.newaxis,:]@A@x[:,:,np.newaxis])
+    return np.squeeze(r)
 
 def _getAplus(A):
     eigval, eigvec = LA.eig(A)
@@ -42,3 +46,18 @@ def nearPD(A, nit=10):
         deltaS = Xk - Rk
         Yk = _getPu(Xk, W=W)
     return np.array(Yk)
+
+
+
+def mat_vec(A, x): 
+    return A@x
+
+
+def vec_mat_vec(A, x):
+    return x@A@x
+
+
+
+def outer_product():
+    return 
+
