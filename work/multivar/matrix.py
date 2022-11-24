@@ -131,6 +131,6 @@ with open("./exper_result.csv", mode="a") as f:
     l =  [file_name, average_loss ,n, eps, data_dim,
             mu, mu_out,
             par_reg1, learn_par, dicay_par,
-            exper_iter, optim_iter, L, init_loc, std,date, time ]
+            exper_iter, optim_iter, L, init_loc, std,date, time, lr_u ]
     l = list(map(str, l))
     f.writelines(" ,".join(l))
