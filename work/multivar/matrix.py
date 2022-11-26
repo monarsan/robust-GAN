@@ -66,13 +66,13 @@ for i in range(exper_iter):
            
             #連立方程式の行列を求める Ax = b
             # ここからがMMアルゴリズムの計算
-            A1 = -1/10 * (mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq))
+            A1 = -1/10 * (mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -par_reg1
             A2 = -1/10 * (mean_outer_product(z_sq, z)    + mean_outer_product(data_sq, data))
             A3 =  1/10 * (z_sq.mean(axis=0)                   +data_sq.mean(axis=0))
             b1 = - ((deriv_sigmoid(t0_z)+t0_z/10)[:, np.newaxis]*z_sq).mean(axis=0) + ((deriv_sigmoid(t0_data) -t0_data/10)[:, np.newaxis]*data_sq).mean(axis=0)
 
             A4 = -1/10 * (mean_outer_product(z, z_sq) + mean_outer_product(data, data_sq))
-            A5 = -1/10 * (mean_outer_product(z, z)    + mean_outer_product(data, data))
+            A5 = -1/10 * (mean_outer_product(z, z)    + mean_outer_product(data, data)) - par_reg1
             A6 =  1/10 * z.mean(axis=0)                  + 1/10*data.mean(axis=0)
             b2 = -((deriv_sigmoid(t0_z)+t0_z/10)[:,np.newaxis]*z).mean(axis=0) +((deriv_sigmoid(t0_data) -t0_data/10)[:,np.newaxis]*data).mean(axis=0)
 
