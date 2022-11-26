@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.linalg as LA
 
 
 def sigmoid(x):
@@ -48,6 +49,8 @@ def nearPD(A, nit=10):
     return np.array(Yk)
 
 
+def sample_wise_outer_product(x, y):
+    return x[:,:,np.newaxis]@y[:,np.newaxis,:]
 
 def mat_vec(A, x): 
     return A@x
@@ -57,7 +60,11 @@ def vec_mat_vec(A, x):
     return x@A@x
 
 
+def mean_outer_product(z1, z2): #(n, d)*(n, d)  vector_wise_dot->  (n, d, d)  mean-> (d, d)
+    outer_product = z2[:, np.newaxis, :]*z1[:, :, np.newaxis]
+    return np.mean(outer_product, axis = 0)
 
+    
 def outer_product():
     return 
 
