@@ -8,8 +8,9 @@ warnings.filterwarnings('ignore')
 from tqdm import tqdm
 from numpy.lib.function_base import cov
 from sys import argv
-from libs.functions import sigmoid, g_lo, g_up, nearPD
+from libs.functions import sigmoid, g_lo, g_up, nearPD, sample_wise_vec_mat_vec, deriv_sigmoid, sample_wise_outer_product
 from libs.create import create_out_cov, create_norm_data
+
 
 n = int(argv[1])
 m = 3*n
@@ -35,12 +36,10 @@ init_loc=float(argv[13])
 
 # 分散を固定しない
 out_cov = np.eye(data_dim) #create_out_cov(data_dim)
-res_mean = [0 for i in range(exper_iter)]
-res_cov = [0 for i in range(exper_iter)]
-res_par = [0 for i in range(exper_iter)]
-for i in (range(exper_iter)):
+res_cov = [0 for _ in range(exper_iter)]
+res_par = [0 for _ in range(exper_iter)]
+for exp_index in (range(exper_iter)):
     data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
-
     cov_hist = []
     par_hist = []
     # 平均は次元ごとにロバスト、分散はロバストでない
@@ -49,31 +48,61 @@ for i in (range(exper_iter)):
 
     def discriminator(x, beta):
         size, data_dim = x.shape[0], x.shape[-1]
-        stack = [x, x**2]
-        value = np.dot(np.stack(stack, axis=1).reshape(size, len(stack)*data_dim),beta)
+        beta = beta.reshape([data_dim,data_dim])
+        value = sample_wise_vec_mat_vec(beta,x)
         return value
-    size_par = 2*data_dim
+
+    size_par = data_dim**2
     par = np.random.normal(loc = 0, scale = 0.1, size = size_par)
     bias = np.array(np.mean( discriminator(z, par[0:size_par]) ))[np.newaxis]
-    par = np.concatenate([par, bias], axis = 0)
+    par = np.concatenate([par, bias], axis = 0) #(d**2 +1)
+    cov_hist.append(alpha[1])
+    par_hist.append(par)
     for j in tqdm(range(1, optim_iter+1)):
         z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1] , size = m)
+        t0_z = discriminator(z, par[:-1]) - bias #shape (m,)
+        t0_data = discriminator(data, par[:-1]) - bias # (n,)
+        zzT = sample_wise_outer_product(z,z)
+        xxT = sample_wise_outer_product(data, data)
+        A=np.zeros([data_dim, data_dim, data_dim, data_dim])
+        A_bias_col = np.zeros([data_dim,data_dim])
+        A_b = np.zeros([data_dim,data_dim])
+        A_bias_row = np.zeros([data_dim, data_dim])
+        for i in range(data_dim):
+            for k in range(data_dim):
+                A[i][k] = -1/10*( np.mean(z[:,i][:,np.newaxis, np.newaxis]*z[:,k][:,np.newaxis,np.newaxis]*zzT, axis=0)\
+                                + np.mean(data[:,i][:,np.newaxis, np.newaxis]*data[:,k][:,np.newaxis, np.newaxis]*xxT, axis = 0))             
+            A_bias_col[i] = 1/10*np.mean(z[:,i][:,np.newaxis]*z, axis=0) +np.mean(data[:,i][:,np.newaxis]*data, axis=0)
+            A_b[i] = -(np.mean(((deriv_sigmoid(t0_z)+t0_z/10)*z[:,i])[:,np.newaxis]*z, axis=0)\
+                         -np.mean(((deriv_sigmoid(t0_data)-t0_data/10)*data[:,i])[:,np.newaxis]*data,axis=0)) 
+            A_bias_row[i] = 1/10*(np.mean(z[:,i, np.newaxis]*z , axis=0)  +np.mean(data[:,i, np.newaxis]*data , axis=0))
+        bias_bias = -0.2
+        b_bias = ( np.mean(deriv_sigmoid(t0_z) + t0_z/10, axis=0) -np.mean(deriv_sigmoid(t0_data - t0_data/10),axis=0)) 
 
 
+        A_bias_col = A_bias_col.reshape(data_dim**2, 1)    
+        A_bias_row = A_bias_row.reshape(1,data_dim**2)    
+        A_b = A_b.reshape(data_dim**2)
+
+        A = A.T.reshape(data_dim,data_dim**2,data_dim).T.reshape(data_dim**2,data_dim**2)
+        A = np.concatenate([A,A_bias_col], axis=1)
+        A_bias_row = np.concatenate([A_bias_row, np.array(bias_bias)[np.newaxis, np.newaxis]], axis=1)
+        A = np.concatenate([A,A_bias_row], axis=0)
+        b = np.concatenate([A_b, b_bias[np.newaxis]], axis = 0)
         
-        
+        par = LA.lstsq(A,b)[0]
+
         alpha_m = alpha[0]; alpha_v = alpha[1]
         v_inv = np.linalg.inv(alpha_v)
         sigma_grad = (alpha_v - (z- alpha_m)[:,:,np.newaxis] * (z-alpha_m)[:, np.newaxis, :])/2
-        sig_ = sigmoid(discriminator(z, par[:2*data_dim]) - par[2*data_dim])[:,np.newaxis]
+        sig_ = sigmoid(discriminator(z, par[:-1]) - par[-1])[:,np.newaxis]
         tmp_alpha_v = v_inv - learn_par/j**dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
         alpha[1] = (LA.inv(tmp_alpha_v))
 
-
         cov_hist.append(alpha[1])
         par_hist.append(par)
-    res_cov[i] = cov_hist
-    res_par[i] = par_hist
+    res_cov[exp_index] = cov_hist
+    res_par[exp_index] = par_hist
 
 
 import os
