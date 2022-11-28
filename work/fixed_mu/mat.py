@@ -35,10 +35,14 @@ init_loc=float(argv[13])
 
 
 # 分散を固定しない
-out_cov = np.eye(data_dim) #create_out_cov(data_dim)
+
 res_cov = [0 for _ in range(exper_iter)]
 res_par = [0 for _ in range(exper_iter)]
+res_par_cov=[]
 for exp_index in (range(exper_iter)):
+    par_sd = create_out_cov(data_dim)
+    out_cov = create_out_cov(data_dim)
+    res_par_cov.append(par_sd)
     data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
     cov_hist = []
     par_hist = []
@@ -118,12 +122,15 @@ path = "result/cov"+str(file_name)+".npy"
 np.save(path,np.array(res_cov))
 path = "result/par"+str(file_name)+".npy"
 np.save(path,np.array(res_par))
+path = "result/true_par"+str(file_name)+".npy"
+np.save(path,np.array(res_par_cov))
+
 
 cov = []; npcov=np.array(res_cov)
 
     
 for i in range(exper_iter):
-    loss_cov = LA.norm(npcov[i]-np.eye(data_dim), axis=(1,2))
+    loss_cov = LA.norm(npcov[i]-res_par_cov[i], axis=(1,2))
     cov.append(loss_cov[-1])
 
 average_loss_cov = str(np.mean(cov))[:6]
