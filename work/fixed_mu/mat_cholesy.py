@@ -8,10 +8,11 @@ warnings.filterwarnings('ignore')
 from tqdm import tqdm
 from numpy.lib.function_base import cov
 from sys import argv
-from libs.functions import sigmoid, g_lo, g_up, nearPD, sample_wise_vec_mat_vec, deriv_sigmoid, sample_wise_outer_product
+from libs.functions import sigmoid, g_lo, g_up, nearPD, sample_wise_vec_mat_vec, deriv_sigmoid, sample_wise_outer_product, kendall
 from libs.create import create_out_cov, create_norm_data
 import matplotlib.pyplot as plt
-
+from libs.utils import slack_massage, tqdm_slack
+import seaborn as sns
 
 n = int(argv[1])
 m = 3*n
@@ -38,7 +39,6 @@ init_loc=float(argv[13])
 # 分散を固定しない
 
 res_cov = [0 for _ in range(exper_iter)]
-res_cov = [0 for _ in range(exper_iter)]
 res_par = [0 for _ in range(exper_iter)]
 res_par_cov=[]
 def discriminator(x, beta):
@@ -47,28 +47,30 @@ def discriminator(x, beta):
     value = sample_wise_vec_mat_vec(beta,x)
     return value
 
-
-for exp_index in (range(exper_iter)):
-    par_sd = create_out_cov(data_dim)
-    out_cov = create_out_cov(data_dim)
+par_sd = create_out_cov(data_dim)
+out_cov = create_out_cov(data_dim)
+slack_massage("exper start!")
+for exp_index in tqdm_slack(exper_iter):
+    slack_massage("%d/%d"%(exp_index+1,exper_iter))
     res_par_cov.append(par_sd)
     data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
     cov_hist = []
     par_hist = []
-    # 平均は次元ごとにロバスト、分散はロバストでない
-    B=LA.cholesky(np.cov(data, rowvar = False))
+    cov_init = kendall(data)
+    u, s, vt = np.linalg.svd(cov_init)
+    B=np.matmul(np.diag(s)**(1/2), vt).T
     alpha = [np.full(data_dim, par_mu), B]
     z = np.random.multivariate_normal(mean=alpha[0], cov=B@B.T, size = m)
 
 
     size_par = data_dim**2
-    par = np.random.normal(loc = 0, scale = 0.1, size = size_par)
-    bias = np.array(np.mean( discriminator(z, par[0:size_par]) ))[np.newaxis]
+    par = (B@B.T).reshape(size_par)
+    # par = np.random.normal(loc = 0, scale = 0.1, size = size_par)
+    bias = np.array(np.mean(discriminator(z, par[0:size_par]) ))[np.newaxis]
     par = np.concatenate([par, bias], axis = 0) #(d**2 +1)
     cov_hist.append(alpha[1]@alpha[1].T)
     par_hist.append(par)
-    for j in tqdm(range(1, optim_iter+1)):
-
+    for j in range(optim_iter):
         z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1]@alpha[1].T , size = m)
         zzT = sample_wise_outer_product(z,z)
         xxT = sample_wise_outer_product(data, data)
@@ -104,18 +106,22 @@ for exp_index in (range(exper_iter)):
             b = np.concatenate([A_b_reshaped, b_bias[np.newaxis]], axis = 0)
             
             par = LA.lstsq(A_,b)[0]
-            l+=1
+            l+= 1
 
+
+        z = np.random.multivariate_normal(mean=alpha[0], cov=np.eye(data_dim) , size = m)
         alpha_m = alpha[0]; alpha_v = alpha[1]
-        ABZ = (z@par[:-1].reshape(data_dim, data_dim))@(B+B.T)
+        ABZ = (z@par[:-1].reshape(data_dim, data_dim))@(alpha_v+alpha_v.T)
         sigma_grad = sample_wise_outer_product(ABZ, z) #(m, d, d)
-        sig_ = sigmoid(discriminator(z, par[:-1]) - par[-1])[:,np.newaxis] #(m,)
-        tmp_alpha_v = alpha_v - learn_par/j**dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
+        sig_ = deriv_sigmoid(discriminator(z@alpha_v, par[:-1]) - par[-1])[:,np.newaxis] #(m,)
+        tmp_alpha_v = alpha_v - learn_par/(j+1)**dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
         alpha[1] = tmp_alpha_v
+
         cov_hist.append(alpha[1]@alpha[1].T)
         par_hist.append(par)
     res_cov[exp_index] = cov_hist
     res_par[exp_index] = par_hist
+slack_massage("exper finish !")
 
 
 import os
