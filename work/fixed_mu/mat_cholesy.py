@@ -13,6 +13,9 @@ from libs.create import create_out_cov, create_norm_data
 import matplotlib.pyplot as plt
 from libs.utils import slack_massage, tqdm_slack
 import seaborn as sns
+import wandb
+from sklearn .covariance import MinCovDet
+
 
 n = int(argv[1])
 m = 3*n
@@ -35,24 +38,50 @@ par_reg1=float(argv[11])
 learn_par = float(argv[12])
 init_loc=float(argv[13])
 
+import os
+file_name=0
+while True:
+    path = "result/cov"+str(file_name)+".npy"
+    if not os.path.isfile(path):
+        break
+    file_name+=1
 
-# 分散を固定しない
+
+
+config = dict(
+    learning_rate = learn_par,
+    dicay_parameter = dicay_par,
+    outlier_mu = out_mu,
+    covariance_setting = "sparse"
+)
+
+wandb.init(
+    project="robust scatter estimation",
+    entity="robust-gan",
+    config=config
+)
+
+
+
 
 res_cov = [0 for _ in range(exper_iter)]
 res_par = [0 for _ in range(exper_iter)]
-res_par_cov=[]
+res_true_cov=[]
+res_out_cov = []
 def discriminator(x, beta):
     size, data_dim = x.shape[0], x.shape[-1]
     beta = beta.reshape([data_dim,data_dim])
     value = sample_wise_vec_mat_vec(beta,x)
     return value
 
-par_sd = create_out_cov(data_dim)
-out_cov = create_out_cov(data_dim)
+dict_wandb = dict()
+
 slack_massage("exper start!")
 for exp_index in tqdm_slack(exper_iter):
     slack_massage("%d/%d"%(exp_index+1,exper_iter))
-    res_par_cov.append(par_sd)
+    par_sd = create_out_cov(data_dim)
+    out_cov = create_out_cov(data_dim)
+    res_true_cov.append(par_sd); res_out_cov.append(out_cov)
     data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
     cov_hist = []
     par_hist = []
@@ -121,31 +150,41 @@ for exp_index in tqdm_slack(exper_iter):
         par_hist.append(par)
     res_cov[exp_index] = cov_hist
     res_par[exp_index] = par_hist
+
+    tmp_cov = np.array(cov_hist)
+    loss_cov = LA.norm(tmp_cov-par_sd, axis=(1,2))
+    loss_data = np.concatenate([np.arange(len(loss_cov))[:,np.newaxis], loss_cov[:,np.newaxis]], axis=1).tolist()
+    table = wandb.Table(data=loss_data, columns=['step','op norm loss'])
+    log_name = str(file_name)+'-'+str(exp_index)
+    line_plot = wandb.plot.line(table, x='step', y='op norm loss', title=log_name)
+    dict_wandb[log_name] = line_plot
+
+    # wandb.log({log_name : wandb.plot.line_series(
+    #       xs=list(range(len(loss_cov))),
+    #       ys=[loss_cov],
+    #       keys= ['Loss of op norm'],
+    #       title=log_name,
+    #       xname="iter")})
 slack_massage("exper finish !")
 
-
-import os
-file_name=0
-while True:
-    path = "result/cov"+str(file_name)+".npy"
-    if not os.path.isfile(path):
-        break
-    file_name+=1
-
+wandb.log(dict_wandb)
 
 path = "result/cov"+str(file_name)+".npy"
 np.save(path,np.array(res_cov))
 path = "result/par"+str(file_name)+".npy"
 np.save(path,np.array(res_par))
 path = "result/true_par"+str(file_name)+".npy"
-np.save(path,np.array(res_par_cov))
+np.save(path,np.array(res_true_cov))
+path = "result/out_cov"+str(file_name)+".npy"
+np.save(path,np.array(res_out_cov))
 
 
 cov = []; npcov=np.array(res_cov)
-
+loss_plot = []
     
 for i in range(exper_iter):
-    loss_cov = LA.norm(npcov[i]-res_par_cov[i], axis=(1,2))
+    loss_cov = LA.norm(npcov[i]-res_true_cov[i], axis=(1,2))
+    loss_plot.append(loss_cov)
     cov.append(loss_cov[-1])
 
 average_loss_cov = str(np.mean(cov))[:6]
@@ -154,6 +193,8 @@ average_loss_cov = str(np.mean(cov))[:6]
 import datetime
 date = str(datetime.datetime.now())[:-10][:10]
 time = str(datetime.datetime.now())[:-10][10:]
+
+
 
 with open("./exper_result.csv", mode="a") as f:
     f.write("\n")
