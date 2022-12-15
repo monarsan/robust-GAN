@@ -65,7 +65,7 @@ class gan(object):
         
         
     # todo: add default par after do optuna  
-    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d, reg_g, m, mm_iter):
+    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d, reg_g, m, mm_iter, l_smooth):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.decay_par = decay_par
@@ -73,6 +73,7 @@ class gan(object):
         self.reg_g = reg_g
         self.m = m
         self.mm_iter =  mm_iter
+        self.l_smooth = l_smooth
     
     def _est_cov(self):
         return self.G@self.G.T
@@ -85,6 +86,7 @@ class gan(object):
         if self.setting =='sigma':self.fro_loss=[]
         for i in range(optim_iter):
             self.iter = i
+            #todo normalize input
             #Update D
             if self.setting =='mu':
                 self._mm_alg_mu()
@@ -99,8 +101,8 @@ class gan(object):
                 self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
             else:
                 self._GD_sigma()
-                self.l2_loss.append(LA.norm(self.est_cov()- self.true_cov, ord='2'))            
-                self.fro_loss.append(LA.norm(self.est_cov()- self.true_cov, ord='ord'))  
+                self.l2_loss.append(LA.norm(self._est_cov()- self.true_cov, ord=2))            
+                self.fro_loss.append(LA.norm(self._est_cov()- self.true_cov, ord='fro'))  
             self.G_record.append(self.G)
         
         
@@ -110,6 +112,7 @@ class gan(object):
         data = self.data
         #todo assume cov mat is I, it may be generalized
         z = np.random.multivariate_normal(mean=self.G, cov=np.eye(data_dim), size = self.m)
+        #todo normalize here
         l = 0
         z_sq = z**2
         data_sq = data**2
@@ -119,20 +122,20 @@ class gan(object):
 
             #連立方程式の行列を求める Ax = b
             # ここからがMMアルゴリズムの計算
-            A1 = -1/10 * (mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -self.reg_d*data_dim/(self.data_size**2)
-            A2 = -1/10 * (mean_outer_product(z_sq, z)    + mean_outer_product(data_sq, data))
-            A3 =  1/10 * (z_sq.mean(axis=0)                   +data_sq.mean(axis=0))
-            b1 = - ((deriv_sigmoid(t0_z)+t0_z/10)[:, np.newaxis]*z_sq).mean(axis=0) + ((deriv_sigmoid(t0_data) -t0_data/10)[:, np.newaxis]*data_sq).mean(axis=0)
+            A1 = -1/10 * (self.l_smooth*mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -self.reg_d*data_dim/(self.data_size**2)
+            A2 = -1/10 * (self.l_smooth*mean_outer_product(z_sq, z)    + mean_outer_product(data_sq, data))
+            A3 =  1/10 * (self.l_smooth*z_sq.mean(axis=0)                   +data_sq.mean(axis=0))
+            b1 = - (self.l_smooth*(deriv_sigmoid(t0_z)+t0_z/10)[:, np.newaxis]*z_sq).mean(axis=0) + ((deriv_sigmoid(t0_data) -t0_data/10)[:, np.newaxis]*data_sq).mean(axis=0)
 
-            A4 = -1/10 * (mean_outer_product(z, z_sq) + mean_outer_product(data, data_sq))
-            A5 = -1/10 * (mean_outer_product(z, z)    + mean_outer_product(data, data)) - -self.reg_d*data_dim/(self.data_size**2)
-            A6 =  1/10 * z.mean(axis=0)                  + 1/10*data.mean(axis=0)
-            b2 = -((deriv_sigmoid(t0_z)+t0_z/10)[:,np.newaxis]*z).mean(axis=0) +((deriv_sigmoid(t0_data) -t0_data/10)[:,np.newaxis]*data).mean(axis=0)
+            A4 = -1/10 * (self.l_smooth*mean_outer_product(z, z_sq) + mean_outer_product(data, data_sq))
+            A5 = -1/10 * (self.l_smooth*mean_outer_product(z, z)    + mean_outer_product(data, data)) - -self.reg_d*data_dim/(self.data_size**2)
+            A6 =  1/10 * self.l_smooth* z.mean(axis=0)                  + 1/10*data.mean(axis=0)
+            b2 = -(self.l_smooth*(deriv_sigmoid(t0_z)+t0_z/10)[:,np.newaxis]*z).mean(axis=0) +((deriv_sigmoid(t0_data) -t0_data/10)[:,np.newaxis]*data).mean(axis=0)
 
-            A7 = -1/10 * z_sq.mean(axis=0) + 1/10 * data_sq.mean(axis=0)
-            A8 = -1/10 * z.mean(axis=0)    + 1/10 * data.mean(axis=0)
-            A9 = np.full(1, -0.2)
-            b3 = np.array([np.mean(deriv_sigmoid(t0_z)  -t0_z/10, axis = 0) - np.mean(deriv_sigmoid(t0_data) -t0_data/10, axis=0)])
+            A7 = -1/10 * self.l_smooth * z_sq.mean(axis=0) + 1/10 * data_sq.mean(axis=0)
+            A8 = -1/10 * self.l_smooth * z.mean(axis=0)    + 1/10 * data.mean(axis=0)
+            A9 = np.full(1, - self.l_smooth*(1/10) - (1/10))
+            b3 = np.array([self.l_smooth*np.mean(deriv_sigmoid(t0_z)  -t0_z/10, axis = 0) - np.mean(deriv_sigmoid(t0_data) -t0_data/10, axis=0)])
             
             A_a = np.concatenate([A1, A2, A3[:, np.newaxis]], axis=1)
             A_b = np.concatenate([A4, A5, A6[:, np.newaxis]], axis=1)
@@ -157,7 +160,7 @@ class gan(object):
     
     
 
-    def _mm_alg_sigma(self, mm_iter):
+    def _mm_alg_sigma(self):
         data_dim = self.data_dim
         data = self.data
         z = np.random.multivariate_normal(mean=self.true_mean, cov=self._est_cov() , size = self.m)
@@ -168,9 +171,10 @@ class gan(object):
         A_b = np.zeros([data_dim,data_dim])
         A_bias_row = np.zeros([data_dim, data_dim])
         l=0
-        while (l<mm_iter) :
+        while (l< self.mm_iter) :
             t0_z =    self._u(z)    - self.bias #shape (m,)
             t0_data = self._u(data) - self.bias # (n,)
+            #todo この2重ループの計算量がおおい
             for i in range(data_dim):
                 for k in range(data_dim):
                     A[i][k] = -1/10*( np.mean(z[:,i][:,np.newaxis, np.newaxis]*z[:,k][:,np.newaxis,np.newaxis]*zzT, axis=0)\
@@ -200,14 +204,14 @@ class gan(object):
             l+= 1
 
     
-    
+    # todo Use Adam
     def _GD_sigma(self):
         data_dim = self.data_dim
         z = np.random.multivariate_normal(mean=self.true_mean, cov=np.eye(data_dim) , size = self.m)
         ABZ = (z@self.D.reshape(data_dim, data_dim))@(self.G+self.G.T)
         sigma_grad = sample_wise_outer_product(ABZ, z) #(m, d, d)
         sig_ = deriv_sigmoid(self._u(z@self.G) - self.bias)[:,np.newaxis] #(m,)
-        tmp_alpha_v = self.G - self.learn_par/(self.iter+1)**self.dicay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
+        tmp_alpha_v = self.G - self.lr_g/(self.iter+1)**self.decay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
         self.G = tmp_alpha_v
         
         
