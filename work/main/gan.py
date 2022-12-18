@@ -36,8 +36,9 @@ class gan(object):
             self.out_cov  = np.eye(self.data_dim)
 
 
-    def data_init(self, data_size:int) -> None:
+    def data_init(self, data_size:int, mc_size = 3) -> None:
         self.data_size = data_size
+        self.mc_size = mc_size * self.data_size
         self.data = create_norm_data(self.data_size, self.eps, self.true_mean,
                                     self.true_cov, self.out_mean, self.out_cov)
 
@@ -63,15 +64,30 @@ class gan(object):
         else:
             return sample_wise_vec_mat_vec(self.D.reshape(d,d), x)
         
+    
+    def _D(self, x:List[float]) -> List[float]:
+        return sigmoid(self._u(x) - self.bias)
+    
+    
+    def _z(self):
+        if self.setting =='mu':
+            z = np.random.multivariate_normal(mean= self.G, 
+                                              cov= np.eye(self.data_dim),
+                                              size = self.mc_size)
+        else:
+            z = np.random.multivariate_normal(mean = self.true_mean,
+                                              cov = self.G,
+                                              size= self.mc_size)
+        return z
+        
         
     # todo: add default par after do optuna  
-    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d, reg_g, m, mm_iter, l_smooth):
+    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d, reg_g, mm_iter, l_smooth):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.decay_par = decay_par
         self.reg_d = reg_d        
         self.reg_g = reg_g
-        self.m = m
         self.mm_iter =  mm_iter
         self.l_smooth = l_smooth
     
@@ -81,9 +97,10 @@ class gan(object):
         
     #todo: add agerave epochs
     def fit(self, optim_iter):
-        self.l2_loss=[]
+        self.objective = [ self._D(self._z()).mean() - self._D(self.data).mean()]
+        self.l2_loss=[LA.norm(self._est_cov()- self.true_cov, ord=2)]
         self.optim_iter = optim_iter
-        if self.setting =='sigma':self.fro_loss=[]
+        if self.setting =='sigma':self.fro_loss=[LA.norm(self._est_cov()- self.true_cov, ord='fro')]
         for i in range(optim_iter):
             self.iter = i
             #todo normalize input
@@ -111,7 +128,7 @@ class gan(object):
         data_dim =self.data_dim
         data = self.data
         #todo assume cov mat is I, it may be generalized
-        z = np.random.multivariate_normal(mean=self.G, cov=np.eye(data_dim), size = self.m)
+        z =self._z()
         #todo normalize here
         l = 0
         z_sq = z**2
@@ -150,20 +167,18 @@ class gan(object):
     
     
     def _GD_mu(self):
-        z = np.random.multivariate_normal(mean=self.G, cov=np.eye(self.data_dim), size = self.m)
+        z = self._z()
         mgrad = (z-self.G)
         sig_ = sigmoid(self._u(z)-self.bias)[:,np.newaxis]
         tmp_alpha = self.G - self.lr_g/(self.iter+1)**self.decay_par * np.mean(mgrad*sig_, axis = 0)
         self.G = tmp_alpha
-    
-    
-    
+        self.objective.append(self._D(self._z()).mean() - self._D(self.data).mean())
     
 
     def _mm_alg_sigma(self):
         data_dim = self.data_dim
         data = self.data
-        z = np.random.multivariate_normal(mean=self.true_mean, cov=self._est_cov() , size = self.m)
+        z = self._z()
         zzT = sample_wise_outer_product(z,z)
         xxT = sample_wise_outer_product(data, data)
         A=np.zeros([data_dim, data_dim, data_dim, data_dim])
@@ -177,19 +192,19 @@ class gan(object):
             #todo この2重ループの計算量がおおい
             for i in range(data_dim):
                 for k in range(data_dim):
-                    A[i][k] = -1/10*( np.mean(z[:,i][:,np.newaxis, np.newaxis]*z[:,k][:,np.newaxis,np.newaxis]*zzT, axis=0)\
+                    A[i][k] = -1/10*( self.l_smooth*np.mean(z[:,i][:,np.newaxis, np.newaxis]*z[:,k][:,np.newaxis,np.newaxis]*zzT, axis=0)\
                                     + np.mean(data[:,i][:,np.newaxis, np.newaxis]*data[:,k][:,np.newaxis, np.newaxis]*xxT, axis = 0))
                 # reguralization for A
                 A[i][i] -= np.eye(data_dim)/(len(self.data)**2)
-                A_bias_col[i] = 1/10*(np.mean(z[:,i][:,np.newaxis]*z, axis=0) +np.mean(data[:,i][:,np.newaxis]*data, axis=0))
-                A_b[i] = -(np.mean(((deriv_sigmoid(t0_z)+t0_z/10)*z[:,i])[:,np.newaxis]*z, axis=0)\
+                A_bias_col[i] = 1/10*(self.l_smooth*np.mean(z[:,i][:,np.newaxis]*z, axis=0) +np.mean(data[:,i][:,np.newaxis]*data, axis=0))
+                A_b[i] = -(self.l_smooth*np.mean(((deriv_sigmoid(t0_z)+t0_z/10)*z[:,i])[:,np.newaxis]*z, axis=0)\
                             -np.mean(((deriv_sigmoid(t0_data)-t0_data/10)*data[:,i])[:,np.newaxis]*data,axis=0)) 
-                A_bias_row[i] = 1/10*(np.mean(z[:,i, np.newaxis]*z , axis=0)  +np.mean(data[:,i, np.newaxis]*data , axis=0))
-            bias_bias = -0.2
-            b_bias = ( np.mean(deriv_sigmoid(t0_z) + t0_z/10, axis=0) -np.mean(deriv_sigmoid(t0_data - t0_data/10),axis=0)) 
+                A_bias_row[i] = 1/10*(self.l_smooth*np.mean(z[:,i, np.newaxis]*z , axis=0)  +np.mean(data[:,i, np.newaxis]*data , axis=0))
+            bias_bias = -0.1*(self.l_smooth* + 1)
+            b_bias = self.l_smooth*( np.mean(deriv_sigmoid(t0_z) + t0_z/10, axis=0) -np.mean(deriv_sigmoid(t0_data - t0_data/10),axis=0)) 
 
-            A_bias_col_reshaped = A_bias_col.reshape(data_dim**2, 1)    
-            A_bias_row_reshaped = A_bias_row.reshape(1,data_dim**2)    
+            A_bias_col_reshaped = A_bias_col.reshape(data_dim**2, 1)
+            A_bias_row_reshaped = A_bias_row.reshape(1,data_dim**2)
             A_b_reshaped = A_b.reshape(data_dim**2)
 
             A_reshaped = A.T.reshape(data_dim,data_dim**2,data_dim).T.reshape(data_dim**2,data_dim**2)
@@ -207,12 +222,13 @@ class gan(object):
     # todo Use Adam
     def _GD_sigma(self):
         data_dim = self.data_dim
-        z = np.random.multivariate_normal(mean=self.true_mean, cov=np.eye(data_dim) , size = self.m)
+        z = self._z()
         ABZ = (z@self.D.reshape(data_dim, data_dim))@(self.G+self.G.T)
         sigma_grad = sample_wise_outer_product(ABZ, z) #(m, d, d)
         sig_ = deriv_sigmoid(self._u(z@self.G) - self.bias)[:,np.newaxis] #(m,)
         tmp_alpha_v = self.G - self.lr_g/(self.iter+1)**self.decay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
         self.G = tmp_alpha_v
+        self.objective.append(self._D(self._z()).mean() - self._D(self.data).mean())
         
         
     # funcitons for desplaying score
