@@ -236,6 +236,10 @@ class gan(object):
         return np.mean(np.array(self.l2_loss[-average:]), axis=0)
 
 
+    def score_from_init(self)->float:
+        return self.l2_loss[0] - self.l2_loss[-1]
+
+
     def record_wandb(self, title = None):
         import wandb
         import pandas as pd
@@ -257,9 +261,7 @@ class gan(object):
         df['l2-loss'] = self.l2_loss
         df['bias'] = self.bias_record
         df['objective'] = np.array(self.objective)
-        print('Before')
         if self.is_sigma_setting():
-            print('Here')
             df['D norm'] = LA.norm(np.array(self.D_record).reshape(self.optim_iter +1, self.data_dim, self.data_dim), axis=(1,2))
             df['fro-loss'] = self.fro_loss
             df['A11'] = np.array(self.D_record)[:,0]
@@ -277,7 +279,6 @@ class gan(object):
                                                     xname='steps')
         wandb.log(dict_plot)
         wandb.finish()
-
 
 
     def is_mu_setting(self):
