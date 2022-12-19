@@ -28,7 +28,7 @@ class gan(object):
         self.setting =  setting
         self.true_mean = np.full(self.data_dim, true_mean)
         self.out_mean = np.full(self.data_dim, out_mean)
-        if setting=='sigma':
+        if self.is_sigma_setting():
             self.true_cov = create_sparse_cov(self.data_dim)
             self.out_cov  = create_sparse_cov(self.data_dim)
         else:
@@ -44,13 +44,13 @@ class gan(object):
 
 
     def model_init(self, D_init_option = 'mle', G_init_option = 'kendall') -> None:
-        if self.setting == 'mu':
+        if self.is_mu_setting():
             self.D = np.random.normal(0, 0.1, 2*self.data_dim)
             self.G = np.median(self.data, axis=0)
-        elif self.setting == 'sigma':
+        else:
             self.D = init_discriminator(self.data, D_init_option)
             self.G = init_covariance(self.data, G_init_option)
-        self.bias = self._u(self.data).mean(axis=0)
+        self.bias = self._u(self._z()).mean(axis=0)
         self.D_record =[self.D]
         self.G_record =[self.G]
         self.bias_record = [self.bias]
@@ -58,20 +58,19 @@ class gan(object):
 
     def _u(self, x:List[float]) -> List[float]:
         d = self.data_dim
-        if self.setting == 'mu':
+        if self.is_mu_setting():
             return np.sum((x**2)*self.D[:d], axis=1)\
                     + np.sum(x*self.D[d:2*d], axis=1)
         else:
             return sample_wise_vec_mat_vec(self.D.reshape(d,d), x)
-        
-    
+
+
     def _D(self, x:List[float]) -> List[float]:
         return sigmoid(self._u(x) - self.bias)
-    
-    
+
     def _z(self):
         if self.setting =='mu':
-            z = np.random.multivariate_normal(mean= self.G, 
+            z = np.random.multivariate_normal(mean= self.G,
                                               cov= np.eye(self.data_dim),
                                               size = self.mc_size)
         else:
@@ -79,22 +78,22 @@ class gan(object):
                                               cov = self.G,
                                               size= self.mc_size)
         return z
-        
-        
-    # todo: add default par after do optuna  
+
+
+    # todo: add default par after do optuna 
     def optimizer_init(self, lr_d, lr_g, decay_par, reg_d, reg_g, mm_iter, l_smooth):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.decay_par = decay_par
-        self.reg_d = reg_d        
+        self.reg_d = reg_d
         self.reg_g = reg_g
         self.mm_iter =  mm_iter
         self.l_smooth = l_smooth
-    
+
     def _est_cov(self):
         return self.G@self.G.T
-        
-        
+
+
     #todo: add agerave epochs
     def fit(self, optim_iter):
         self.objective = [ self._D(self._z()).mean() - self._D(self.data).mean()]
@@ -105,25 +104,25 @@ class gan(object):
             self.iter = i
             #todo normalize input
             #Update D
-            if self.setting =='mu':
+            if self.is_mu_setting():
                 self._mm_alg_mu()
             else:
                 self._mm_alg_sigma()
             self.D_record.append(self.D)
             self.bias_record.append(self.bias)
-            
+
             #Update G
-            if self.setting =='mu':
+            if self.is_mu_setting():
                 self._GD_mu()
                 self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
             else:
                 self._GD_sigma()
-                self.l2_loss.append(LA.norm(self._est_cov()- self.true_cov, ord=2))            
-                self.fro_loss.append(LA.norm(self._est_cov()- self.true_cov, ord='fro'))  
+                self.l2_loss.append(LA.norm(self._est_cov()- self.true_cov, ord=2))
+                self.fro_loss.append(LA.norm(self._est_cov()- self.true_cov, ord='fro'))
             self.G_record.append(self.G)
-        
-        
-    # functions for optimization        
+
+
+    # functions for optimization
     def _mm_alg_mu(self):
         data_dim =self.data_dim
         data = self.data
@@ -153,7 +152,7 @@ class gan(object):
             A8 = -1/10 * self.l_smooth * z.mean(axis=0)    + 1/10 * data.mean(axis=0)
             A9 = np.full(1, - self.l_smooth*(1/10) - (1/10))
             b3 = np.array([self.l_smooth*np.mean(deriv_sigmoid(t0_z)  -t0_z/10, axis = 0) - np.mean(deriv_sigmoid(t0_data) -t0_data/10, axis=0)])
-            
+
             A_a = np.concatenate([A1, A2, A3[:, np.newaxis]], axis=1)
             A_b = np.concatenate([A4, A5, A6[:, np.newaxis]], axis=1)
             A_bias = np.concatenate([A7, A8, A9], axis=0)
@@ -164,8 +163,8 @@ class gan(object):
             self.D = self.D*(1-decayed_lr_d) + decayed_lr_d*new_par[:-1]
             self.bias = self.bias*(1-decayed_lr_d) + decayed_lr_d*new_par[-1]
             l+=1
-    
-    
+
+
     def _GD_mu(self):
         z = self._z()
         mgrad = (z-self.G)
@@ -173,8 +172,9 @@ class gan(object):
         tmp_alpha = self.G - self.lr_g/(self.iter+1)**self.decay_par * np.mean(mgrad*sig_, axis = 0)
         self.G = tmp_alpha
         self.objective.append(self._D(self._z()).mean() - self._D(self.data).mean())
-    
 
+
+    #todo 変数名がめちゃくちゃ
     def _mm_alg_sigma(self):
         data_dim = self.data_dim
         data = self.data
@@ -200,8 +200,8 @@ class gan(object):
                 A_b[i] = -(self.l_smooth*np.mean(((deriv_sigmoid(t0_z)+t0_z/10)*z[:,i])[:,np.newaxis]*z, axis=0)\
                             -np.mean(((deriv_sigmoid(t0_data)-t0_data/10)*data[:,i])[:,np.newaxis]*data,axis=0)) 
                 A_bias_row[i] = 1/10*(self.l_smooth*np.mean(z[:,i, np.newaxis]*z , axis=0)  +np.mean(data[:,i, np.newaxis]*data , axis=0))
-            bias_bias = -0.1*(self.l_smooth* + 1)
-            b_bias = self.l_smooth*( np.mean(deriv_sigmoid(t0_z) + t0_z/10, axis=0) -np.mean(deriv_sigmoid(t0_data - t0_data/10),axis=0)) 
+            bias_bias = -0.1*(self.l_smooth+ 1)
+            b_bias = ( self.l_smooth*np.mean(deriv_sigmoid(t0_z) + t0_z/10, axis=0) -np.mean(deriv_sigmoid(t0_data - t0_data/10),axis=0)) 
 
             A_bias_col_reshaped = A_bias_col.reshape(data_dim**2, 1)
             A_bias_row_reshaped = A_bias_row.reshape(1,data_dim**2)
@@ -213,12 +213,12 @@ class gan(object):
             A_ = np.concatenate([A_concated,A_bias_row_concated], axis=0)
             b = np.concatenate([A_b_reshaped, b_bias[np.newaxis]], axis = 0)
             lr = self.lr_g/(self.iter+1)**self.decay_par
-            new_par =  lr*LA.solve(A_,b)
+            new_par =  LA.solve(A_,b)
             self.D =  self.D*(1-lr) + lr*new_par[:-1]
             self.bias = self.bias*(1-lr) + lr*new_par[-1]
             l+= 1
 
-    
+
     # todo Use Adam
     def _GD_sigma(self):
         data_dim = self.data_dim
@@ -229,8 +229,59 @@ class gan(object):
         tmp_alpha_v = self.G - self.lr_g/(self.iter+1)**self.decay_par * np.mean(sigma_grad*sig_[:,:,np.newaxis], axis = 0)
         self.G = tmp_alpha_v
         self.objective.append(self._D(self._z()).mean() - self._D(self.data).mean())
-        
-        
+
+
     # funcitons for desplaying score
     def score(self, average:int)->float:
-            return np.mean(np.array(self.l2_loss[-average:]), axis=0)
+        return np.mean(np.array(self.l2_loss[-average:]), axis=0)
+
+
+    def record_wandb(self, title = None):
+        import wandb
+        import pandas as pd
+        config = dict(outlier_mu = self.out_mean,
+                    covariance_setting = "sparse")
+        exper_name=title
+        import wandb
+        wandb.init(
+            project="robust scatter estimation",
+            entity="robust-gan",
+            config=config
+        )
+        if not exper_name =='':
+            wandb.run.name = exper_name
+            wandb.run.save()
+        dict_plot = dict()
+        df = pd.DataFrame()
+        df['step'] = np.arange(self.optim_iter +1)
+        df['l2-loss'] = self.l2_loss
+        df['bias'] = self.bias_record
+        df['objective'] = np.array(self.objective)
+        print('Before')
+        if self.is_sigma_setting():
+            print('Here')
+            df['D norm'] = LA.norm(np.array(self.D_record).reshape(self.optim_iter +1, self.data_dim, self.data_dim), axis=(1,2))
+            df['fro-loss'] = self.fro_loss
+            df['A11'] = np.array(self.D_record)[:,0]
+            df['A12'] = np.array(self.D_record)[:,1]
+        table = wandb.Table(data =df)
+        dict_plot['l2 loss'] = wandb.plot.line(table, 'step', 'l2-loss', title = 'l2 loss')
+        dict_plot['bias'] = wandb.plot.line(table, 'step', 'bias', title = 'bias')
+        dict_plot['objective'] = wandb.plot.line(table, 'step', 'objective', title='objective')
+        if self.is_sigma_setting():
+            dict_plot['D norm'] = wandb.plot.line(table, 'step', 'D norm', title = 'D norm')
+            dict_plot['fro loss'] = wandb.plot.line(table, 'step', 'fro-loss', title = 'fro loss')
+            dict_plot['A11'] = wandb.plot.line_series(xs=df['step'],
+                                                    ys=[df['A11'], df['A12']],
+                                                    keys=['A11', 'A12'],
+                                                    xname='steps')
+        wandb.log(dict_plot)
+        wandb.finish()
+
+
+
+    def is_mu_setting(self):
+        return self.setting == 'mu'
+
+    def is_sigma_setting(self):
+        return self.setting == 'sigma'
