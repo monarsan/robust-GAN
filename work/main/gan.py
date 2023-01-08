@@ -58,7 +58,10 @@ class gan(object):
                 self.G = init_covariance(self.data, G_init_option)
         self.bias = self._u(self._z()).mean(axis=0)
         self.D_record = [self.D]
-        self.G_record = [self.G @ self.G.T]
+        if self.is_sigma_setting():
+            self.G_record = [self.G @ self.G.T]
+        if self.is_mu_setting():
+            self.G_record = [self.G]
         self.bias_record = [self.bias]
 
     def _u(self, x: List[float]) -> List[float]:
@@ -75,7 +78,7 @@ class gan(object):
     def _z(self):
         if self.is_mu_setting():
             z = np.random.multivariate_normal(mean=self.G,
-                                              cov=np.eye(self.data_dim),
+                                              cov=np.identity(self.data_dim),
                                               size=self.mc_size)
         else:
             z = np.random.multivariate_normal(mean=self.true_mean,
@@ -121,13 +124,14 @@ class gan(object):
             if self.is_mu_setting():
                 self._GD_mu()
                 self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
+                self.G_record.append(self.G)
             else:
                 self._GD_sigma()
                 self.l2_loss.append(
                     LA.norm(self._est_cov() - self.true_cov, ord=2))
                 self.fro_loss.append(
                     LA.norm(self._est_cov() - self.true_cov, ord='fro'))
-            self.G_record.append(self.G @ self.G.T)
+                self.G_record.append(self.G @ self.G.T)
 
     # functions for optimization
     def _mm_alg_mu(self):
@@ -145,14 +149,14 @@ class gan(object):
             # 連立方程式の行列を求める Ax = b
             # ここからがMMアルゴリズムの計算
             A1 = -0.1 * (self.l_smooth * mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -\
-                self.reg_d * data_dim / (self.data_size ** 2)
+                self.reg_d * data_dim
             A2 = -0.1 * (self.l_smooth * mean_outer_product(z_sq, z) + mean_outer_product(data_sq, data))
             A3 = 0.1 * (self.l_smooth * z_sq.mean(axis=0) + data_sq.mean(axis=0))
             b1 = - (self.l_smooth * (deriv_sigmoid(t0_z) + t0_z / 10)[:, np.newaxis] * z_sq).mean(axis=0) +\
                 ((deriv_sigmoid(t0_data) - t0_data / 10)[:, np.newaxis] * data_sq).mean(axis=0)
 
             A4 = -0.1 * (self.l_smooth * mean_outer_product(z, z_sq) + mean_outer_product(data, data_sq))
-            A5 = -0.1 * (self.l_smooth * mean_outer_product(z, z) + mean_outer_product(data, data)) - self.reg_d * data_dim / (self.data_size ** 2)
+            A5 = -0.1 * (self.l_smooth * mean_outer_product(z, z) + mean_outer_product(data, data)) - self.reg_d * data_dim
             A6 = 0.1 * self.l_smooth * z.mean(axis=0) + 0.1 * data.mean(axis=0)
             b2 = -(self.l_smooth * (deriv_sigmoid(t0_z) + t0_z / 10)[:, np.newaxis] * z).mean(
                 axis=0) + ((deriv_sigmoid(t0_data) - t0_data / 10)[:, np.newaxis] * data).mean(axis=0)
@@ -177,8 +181,7 @@ class gan(object):
         z = self.z
         mgrad = (z - self.G)
         sig_ = sigmoid(self._u(z) - self.bias)[:, np.newaxis]
-        tmp_alpha = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(mgrad * sig_, axis=0)
-        self.G = tmp_alpha
+        self.G = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(mgrad * sig_, axis=0)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
     # todo 変数名がめちゃくちゃ
