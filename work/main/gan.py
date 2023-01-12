@@ -40,9 +40,9 @@ class gan(object):
             self.true_cov = np.eye(self.data_dim)
             self.out_cov = np.eye(self.data_dim)
 
-    def data_init(self, data_size: int, mc_size=3) -> None:
+    def data_init(self, data_size: int, mc_ratio=3) -> None:
         self.data_size = data_size
-        self.mc_size = mc_size * self.data_size
+        self.mc_size = mc_ratio * self.data_size
         self.data = create_norm_data(self.data_size, self.eps, self.true_mean,
                                      self.true_cov, self.out_mean, self.out_cov)
 
@@ -144,16 +144,16 @@ class gan(object):
         data_sq = data**2
         while counter_mm < self.mm_iter:
             t0_z = self._u(z) - self.bias  # shape (m,)
-            t0_data = self._u(self.data) - self.bias  # (n,)
+            t0_data = self._u(data) - self.bias  # (n,)
 
             # 連立方程式の行列を求める Ax = b
             # ここからがMMアルゴリズムの計算
-            A1 = -0.1 * (self.l_smooth * mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -\
-                self.reg_d * data_dim
+            A1 = -0.1 * (self.l_smooth * mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq))\
+                - self.reg_d * data_dim
             A2 = -0.1 * (self.l_smooth * mean_outer_product(z_sq, z) + mean_outer_product(data_sq, data))
             A3 = 0.1 * (self.l_smooth * z_sq.mean(axis=0) + data_sq.mean(axis=0))
-            b1 = - (self.l_smooth * (deriv_sigmoid(t0_z) + t0_z / 10)[:, np.newaxis] * z_sq).mean(axis=0) +\
-                ((deriv_sigmoid(t0_data) - t0_data / 10)[:, np.newaxis] * data_sq).mean(axis=0)
+            b1 = - (self.l_smooth * (deriv_sigmoid(t0_z) + t0_z / 10)[:, np.newaxis] * z_sq).mean(axis=0)\
+                + ((deriv_sigmoid(t0_data) - t0_data / 10)[:, np.newaxis] * data_sq).mean(axis=0)
 
             A4 = -0.1 * (self.l_smooth * mean_outer_product(z, z_sq) + mean_outer_product(data, data_sq))
             A5 = -0.1 * (self.l_smooth * mean_outer_product(z, z) + mean_outer_product(data, data)) - self.reg_d * data_dim
@@ -180,7 +180,7 @@ class gan(object):
     def _GD_mu(self):
         z = self.z
         mgrad = (z - self.G)
-        sig_ = sigmoid(self._u(z) - self.bias)[:, np.newaxis]
+        sig_ = self._D(z)[:, np.newaxis]
         self.G = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(mgrad * sig_, axis=0)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
