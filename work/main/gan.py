@@ -43,8 +43,8 @@ class gan(object):
     def data_init(self, data_size: int, mc_ratio=3) -> None:
         self.data_size = data_size
         self.mc_size = mc_ratio * self.data_size
-        self.data = create_norm_data(self.data_size, self.eps, self.true_mean,
-                                     self.true_cov, self.out_mean, self.out_cov)
+        self.data, self.target_data, self.contami_data = create_norm_data(self.data_size, self.eps, self.true_mean,
+                                                                          self.true_cov, self.out_mean, self.out_cov)
 
     def model_init(self, D_init_option='mle', G_init_option='kendall') -> None:
         if self.is_mu_setting():
@@ -63,8 +63,10 @@ class gan(object):
         if self.is_mu_setting():
             self.G_record = [self.G]
         self.bias_record = [self.bias]
-        self.D_data_recode = [self._D(self.data).mean()]
-        self.D_z_recode = [self._D(self._z()).mean()]
+        self.D_data_record = [self._D(self.data).mean()]
+        self.D_target_record = [self._D(self.target_data).mean()]
+        self.D_contami_record = [self._D(self.contami_data).mean()]
+        self.D_z_record = [self._D(self._z()).mean()]
 
     def _u(self, x: List[float]) -> List[float]:
         d = self.data_dim
@@ -89,14 +91,15 @@ class gan(object):
         return z
 
     # todo: add default par after do optuna
-    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d=0, reg_g=0, mm_iter=1, l_smooth=1):
+    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d=0, reg_g=0, update_D_iter=1, l_smooth=1, is_mm_alg=True):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.decay_par = decay_par
         self.reg_d = reg_d
         self.reg_g = reg_g
-        self.mm_iter = mm_iter
+        self.update_D_iter = update_D_iter
         self.l_smooth = l_smooth
+        self.is_mm_alg = is_mm_alg
 
     def _est_cov(self):
         return self.G @ self.G.T
@@ -114,14 +117,19 @@ class gan(object):
         for i in range(optim_iter):
             self.iter = i
             self.z = self._z()
-            self.D_data_recode.append(self._D(self.data).mean())
-            self.D_z_recode.append(self._D(self.z).mean())
+            self.D_data_record.append(self._D(self.data).mean())
+            self.D_target_record.append(self._D(self.target_data).mean())
+            self.D_contami_record.append(self._D(self.contami_data).mean())
+            self.D_z_record.append(self._D(self.z).mean())
             # todo normalize input
             # Update D
-            if self.is_mu_setting():
-                self._mm_alg_mu()
+            if self.is_mm_alg:
+                if self.is_mu_setting():
+                    self._mm_alg_mu()
+                else:
+                    self._mm_alg_sigma()
             else:
-                self._mm_alg_sigma()
+                self._update_u_via_GD()
             self.D_record.append(self.D)
             self.bias_record.append(self.bias)
             # Update G
@@ -146,7 +154,7 @@ class gan(object):
         counter_mm = 0
         z_sq = z**2
         data_sq = data**2
-        while counter_mm < self.mm_iter:
+        while counter_mm < self.update_D_iter:
             t0_z = self._u(z) - self.bias  # shape (m,)
             t0_data = self._u(data) - self.bias  # (n,)
 
@@ -186,7 +194,7 @@ class gan(object):
         z = self.z
         mgrad = (z - self.G)
         sig_ = self._D(z)[:, np.newaxis]
-        self.G = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(mgrad * sig_, axis=0)
+        self.G = self.G * (1 - self.reg_g) - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(mgrad * sig_, axis=0)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
     # todo 変数名がめちゃくちゃ
@@ -201,17 +209,16 @@ class gan(object):
         A_b = np.zeros([data_dim, data_dim])
         A_bias_row = np.zeros([data_dim, data_dim])
         counter_mm = 0
-        while (counter_mm < self.mm_iter):
+        while (counter_mm < self.update_D_iter):
             t0_z = self._u(z) - self.bias  # shape (m,)
             t0_data = self._u(data) - self.bias  # (n,)
             # todo この2重ループの計算量がおおい
             for i in range(data_dim):
                 for k in range(data_dim):
-                    A[i][k] = -0.1 * (self.l_smooth * np.mean(z[:, i][:, np.newaxis, np.newaxis]
-                                      * z[:, k][:, np.newaxis, np.newaxis] * zzT, axis=0)
+                    A[i][k] = -0.1 * (self.l_smooth * np.mean(z[:, i][:, np.newaxis, np.newaxis] * z[:, k][:, np.newaxis, np.newaxis] * zzT, axis=0)
                                       + np.mean(data[:, i][:, np.newaxis, np.newaxis] * data[:, k][:, np.newaxis, np.newaxis] * xxT, axis=0))
                 # reguralization for A
-                A[i][i] -= np.identity(data_dim) / (len(self.data) ** 2)
+                A[i][i] -= np.identity(data_dim) * self.lr_d
                 A_bias_col[i] = 0.1 * (self.l_smooth * np.mean(z[:, i][:, np.newaxis] * z, axis=0)
                                        + np.mean(data[:, i][:, np.newaxis] * data, axis=0))
                 A_b[i] = -(self.l_smooth * np.mean(((deriv_sigmoid(t0_z) + t0_z / 10) * z[:, i])[:, np.newaxis] * z, axis=0)
@@ -252,8 +259,8 @@ class gan(object):
 
     def _update_u_via_GD(self):
         z = self.z
-        deriv_sig_z = deriv_sigmoid(self._u() - self.bias)  # shape : (m,)
-        deriv_sig_data = deriv_sigmoid(self.data - self.bias)  # shape : (m,)
+        deriv_sig_z = deriv_sigmoid(self._u(self._z()) - self.bias)[:, np.newaxis]  # shape : (m,)
+        deriv_sig_data = deriv_sigmoid(self._u(self.data) - self.bias)[:, np.newaxis]  # shape : (m,)
         if self.is_mu_setting():
             z_sq = z ** 2
             data_sq = self.data ** 2
@@ -271,7 +278,7 @@ class gan(object):
             grad_data = np.mean(deriv_sig_data * xxT, axis=0)
             grad = grad_z - grad_data
         decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_par
-        self.D = self.D - decayed_lr_d * grad  
+        self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
 
     # funcitons for desplaying score
     def score(self, average: int) -> float:
