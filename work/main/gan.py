@@ -40,11 +40,20 @@ class gan(object):
             self.true_cov = np.identity(self.data_dim)
             self.out_cov = np.identity(self.data_dim)
 
-    def data_init(self, data_size: int, mc_ratio=3) -> None:
+    def data_init(self, data_size: int, mc_ratio=3, is_scaling=False) -> None:
         self.data_size = data_size
         self.mc_size = mc_ratio * self.data_size
-        self.data, self.target_data, self.contami_data = create_norm_data(self.data_size, self.eps, self.true_mean,
-                                                                          self.true_cov, self.out_mean, self.out_cov)
+        (self.data,
+         self.target_data,
+         self.contami_data) = create_norm_data(self.data_size, self.eps, self.true_mean,
+                                               self.true_cov, self.out_mean, self.out_cov)
+        self.is_scaling = is_scaling
+        if self.is_scaling:
+            self.scale = np.max(np.abs(self.data), axis=0) + 1e-10
+            self.scaled_data = self.data / self.scale
+            self.scaled_target = self.target_data / self.scale
+            self.scaled_cont = self.contami_data / self.scale
+            self.scaling_matrix = LA.inv(np.diag(self.scale))
 
     def model_init(self, D_init_option='mle', G_init_option='kendall') -> None:
         if self.is_mu_setting():
@@ -52,21 +61,34 @@ class gan(object):
             self.G = np.median(self.data, axis=0)
         else:
             self.D = init_discriminator(self.data, D_init_option)
-            if G_init_option == 'true':
+            if G_init_option == 'true':  # for test
                 self.G = LA.cholesky(self.true_cov)
             else:
                 self.G = init_covariance(self.data, G_init_option)
+            if self.is_scaling:
+                self.G = self.scaling_matrix @ self.G
         self.bias = self._u(self._z()).mean(axis=0)
+
+        # init recorder of model parametor
         self.D_record = [self.D]
         if self.is_sigma_setting():
-            self.G_record = [self.G @ self.G.T]
+            self.G_record = [self._est_cov()]
         if self.is_mu_setting():
             self.G_record = [self.G]
         self.bias_record = [self.bias]
-        self.D_data_record = [self._D(self.data).mean()]
-        self.D_target_record = [self._D(self.target_data).mean()]
-        self.D_contami_record = [self._D(self.contami_data).mean()]
+        self.D_data_record = [self._D(self.scaled_data).mean()]
+        self.D_target_record = [self._D(self.scaled_target).mean()]
+        self.D_contami_record = [self._D(self.scaled_cont).mean()]
         self.D_z_record = [self._D(self._z()).mean()]
+        # self.bias_record = [self.bias]
+        # self.D_data_record = [self._D(self.data).mean()]
+        # self.D_target_record = [self._D(self.target_data).mean()]
+        # self.D_contami_record = [self._D(self.contami_data).mean()]
+        # self.D_z_record = [self._u(self._z()).mean()]
+        # self.u_data_record = [self._u(self.data).mean()]
+        # self.u_target_record = [self._u(self.target_data).mean()]
+        # self.u_contami_record = [self._u(self.contami_data).mean()]
+        # self.u_z_record = [self._u(self._z()).mean()]
 
     def _u(self, x: List[float]) -> List[float]:
         d = self.data_dim
@@ -89,7 +111,20 @@ class gan(object):
                                               cov=self.G,
                                               size=self.mc_size)
         return z
+    
+    def _data(self):
+        if self.is_scaling:
+            return self.scaled_data
+        else:
+            return self.data
 
+    def _est_cov(self):
+        if self.is_scaling:
+            G_tmp = np.diag(self.scale) @ self.G
+            return G_tmp @ G_tmp.T
+        else:
+            return self.G @ self.G.T
+    
     # todo: add default par after do optuna
     def optimizer_init(self, lr_d, lr_g, decay_par, reg_d=0, reg_g=0, update_D_iter=1, l_smooth=1, is_mm_alg=True):
         self.lr_d = lr_d
@@ -100,9 +135,6 @@ class gan(object):
         self.update_D_iter = update_D_iter
         self.l_smooth = l_smooth
         self.is_mm_alg = is_mm_alg
-
-    def _est_cov(self):
-        return self.G @ self.G.T
 
     # todo: add average epochs
     def fit(self, optim_iter):
@@ -117,9 +149,10 @@ class gan(object):
         for i in range(optim_iter):
             self.iter = i
             self.z = self._z()
-            self.D_data_record.append(self._D(self.data).mean())
-            self.D_target_record.append(self._D(self.target_data).mean())
-            self.D_contami_record.append(self._D(self.contami_data).mean())
+            # record
+            self.D_data_record.append(self._D(self.scaled_data).mean())
+            self.D_target_record.append(self._D(self.scaled_target).mean())
+            self.D_contami_record.append(self._D(self.scaled_cont).mean())
             self.D_z_record.append(self._D(self.z).mean())
             # todo normalize input
             # Update D
@@ -143,12 +176,12 @@ class gan(object):
                     LA.norm(self._est_cov() - self.true_cov, ord=2))
                 self.fro_loss.append(
                     LA.norm(self._est_cov() - self.true_cov, ord='fro'))
-                self.G_record.append(self.G @ self.G.T)
+                self.G_record.append(self._est_cov())
 
     # functions for optimization
     def _mm_alg_mu(self):
         data_dim = self.data_dim
-        data = self.data
+        data = self._data()
         z = self.z
         # todo normalize
         counter_mm = 0
@@ -200,7 +233,7 @@ class gan(object):
     # todo 変数名がめちゃくちゃ
     def _mm_alg_sigma(self):
         data_dim = self.data_dim
-        data = self.data
+        data = self._data()
         z = self.z
         zzT = sample_wise_outer_product(z, z)
         xxT = sample_wise_outer_product(data, data)
@@ -255,7 +288,7 @@ class gan(object):
         sig_ = deriv_sigmoid(self._u(z @ self.G) - self.bias)[:, np.newaxis]  # (m,)
         tmp_alpha_v = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(sigma_grad * sig_[:, :, np.newaxis], axis=0)
         self.G = tmp_alpha_v
-        self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
+        self.objective.append(self._D(self.z).mean() - self._D(self._data()).mean())
 
     def _update_u_via_GD(self):
         z = self.z
