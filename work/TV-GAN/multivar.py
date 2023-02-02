@@ -12,7 +12,7 @@ from sys import argv
 from tqdm import tqdm
 import sys 
 sys.path.append("../")
-from libs.create import create_norm_data, create_out_cov
+from libs.create import create_norm_data, create_sparse_cov
 from libs.functions import sigmoid, g_lo, g_up
 import numpy.linalg as LA
 

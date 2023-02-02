@@ -10,7 +10,7 @@ from sys import argv
 from tqdm import tqdm
 import sys
 sys.path.append("../")
-from libs.create import create_norm_data, create_out_cov
+from libs.create import create_norm_data, create_sparse_cov
 from libs.functions import sigmoid, g_lo, g_up, mean_outer_product, deriv_sigmoid
 import numpy.linalg as LA
 
@@ -30,7 +30,7 @@ exper_iter = int(argv[6])
 optim_iter = int(argv[7])
 L = int(argv[8])
 optim_method = str(argv[9])
-dicay_par = float(argv[10])
+decay_par = float(argv[10])
 par_reg1=float(argv[11])
 learn_par = float(argv[12])
 init_loc=float(argv[13])
@@ -63,16 +63,16 @@ for i in range(exper_iter):
             par_a = par[0:data_dim]; par_b = par[data_dim: 2*data_dim]; bias = par[-1]
             t0_z = z_sq@par_a + z@par_b - bias #shape (m,)
             t0_data = data_sq@par_a + data@par_b - bias # (n,)
-           
+
             #連立方程式の行列を求める Ax = b
             # ここからがMMアルゴリズムの計算
-            A1 = -1/10 * (mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -par_reg1
+            A1 = -1/10 * (mean_outer_product(z_sq, z_sq) + mean_outer_product(data_sq, data_sq)) -par_reg1*data_dim
             A2 = -1/10 * (mean_outer_product(z_sq, z)    + mean_outer_product(data_sq, data))
             A3 =  1/10 * (z_sq.mean(axis=0)                   +data_sq.mean(axis=0))
             b1 = - ((deriv_sigmoid(t0_z)+t0_z/10)[:, np.newaxis]*z_sq).mean(axis=0) + ((deriv_sigmoid(t0_data) -t0_data/10)[:, np.newaxis]*data_sq).mean(axis=0)
 
             A4 = -1/10 * (mean_outer_product(z, z_sq) + mean_outer_product(data, data_sq))
-            A5 = -1/10 * (mean_outer_product(z, z)    + mean_outer_product(data, data)) - par_reg1
+            A5 = -1/10 * (mean_outer_product(z, z)    + mean_outer_product(data, data)) - par_reg1*data_dim
             A6 =  1/10 * z.mean(axis=0)                  + 1/10*data.mean(axis=0)
             b2 = -((deriv_sigmoid(t0_z)+t0_z/10)[:,np.newaxis]*z).mean(axis=0) +((deriv_sigmoid(t0_data) -t0_data/10)[:,np.newaxis]*data).mean(axis=0)
 
@@ -86,7 +86,7 @@ for i in range(exper_iter):
             A_bias = np.concatenate([A7, A8, A9], axis=0)
             A = np.concatenate([A_a, A_b, A_bias[np.newaxis, :]], axis=0)
             b = np.concatenate([b1, b2, b3], axis=0)
-            decayed_lr_u =lr_u/j**dicay_par
+            decayed_lr_u =lr_u/j**decay_par
             par = par*(1-lr_u) + lr_u*np.linalg.solve(A, b)
             l +=1
             # ここまで
@@ -95,7 +95,7 @@ for i in range(exper_iter):
         alpha_m = alpha[0]; alpha_v = alpha[1]
         mgrad = (z-alpha_m)
         sig_ = sigmoid(np.dot(np.stack([z**2, z], axis=1).reshape(m, 2*data_dim),par[0:2*data_dim ])- par[2*data_dim])[:,np.newaxis]
-        tmp_alpha = alpha[0] - learn_par/j**dicay_par * np.mean(mgrad*sig_, axis = 0)
+        tmp_alpha = alpha[0] - learn_par/j**decay_par * np.mean(mgrad*sig_, axis = 0)
         alpha[0] = tmp_alpha
         alpha_hist.append(alpha[0])
         par_hist.append(par)
@@ -130,7 +130,7 @@ with open("./exper_result.csv", mode="a") as f:
     f.write("\n")
     l =  [file_name, average_loss ,n, eps, data_dim,
             mu, mu_out,
-            par_reg1, learn_par, dicay_par,
+            par_reg1, learn_par, decay_par,
             exper_iter, optim_iter, L, init_loc, std,date, time, lr_u ]
     l = list(map(str, l))
     f.writelines(" ,".join(l))

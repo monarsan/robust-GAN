@@ -9,7 +9,7 @@ from tqdm import tqdm
 from numpy.lib.function_base import cov
 from sys import argv
 from libs.functions import sigmoid, g_lo, g_up, nearPD
-from libs.create import create_out_cov, create_norm_data
+from libs.create import create_sparse_cov, create_norm_data
 
 n = int(argv[1])
 m = 3*n
@@ -38,11 +38,13 @@ out_cov = np.eye(data_dim) #create_out_cov(data_dim)
 res_mean = [0 for i in range(exper_iter)]
 res_cov = [0 for i in range(exper_iter)]
 res_par = [0 for i in range(exper_iter)]
+ux=[0 for i in range(exper_iter)]
 for i in (range(exper_iter)):
     data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
 
     cov_hist = []
     par_hist = []
+    ux_hist = []
     # 平均は次元ごとにロバスト、分散はロバストでない
     alpha = [np.full(data_dim, par_mu), np.cov(data, rowvar = False)]
     z = np.random.multivariate_normal(mean=alpha[0], cov=alpha[1], size = m)
@@ -67,6 +69,7 @@ for i in (range(exper_iter)):
 
         l = 0
         while(l<L):
+            ux_hist.append(discriminator(z,par[:-1]).mean(axis=0) - discriminator(data,par[:-1]).mean(axis=0))
             op = minimize(major_func, x0 = par, args = par,  method=optim_method)
             par = op.x
             l+=1
@@ -83,6 +86,7 @@ for i in (range(exper_iter)):
         par_hist.append(par)
     res_cov[i] = cov_hist
     res_par[i] = par_hist
+    ux[i] = ux_hist
 
 
 import os
@@ -98,6 +102,8 @@ path = "result/cov"+str(file_name)+".npy"
 np.save(path,np.array(res_cov))
 path = "result/par"+str(file_name)+".npy"
 np.save(path,np.array(res_par))
+path = "result/ux"+str(file_name)+".npy"
+np.save(path,np.array(ux))
 
 cov = []; npcov=np.array(res_cov)
 

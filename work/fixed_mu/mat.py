@@ -9,7 +9,7 @@ from tqdm import tqdm
 from numpy.lib.function_base import cov
 from sys import argv
 from libs.functions import sigmoid, g_lo, g_up, nearPD, sample_wise_vec_mat_vec, deriv_sigmoid, sample_wise_outer_product
-from libs.create import create_out_cov, create_norm_data
+from libs.create import create_sparse_cov, create_norm_data
 
 
 n = int(argv[1])
@@ -40,8 +40,8 @@ res_cov = [0 for _ in range(exper_iter)]
 res_par = [0 for _ in range(exper_iter)]
 res_par_cov=[]
 for exp_index in (range(exper_iter)):
-    par_sd = create_out_cov(data_dim)
-    out_cov = create_out_cov(data_dim)
+    par_sd = create_sparse_cov(data_dim)
+    out_cov = create_sparse_cov(data_dim)
     res_par_cov.append(par_sd)
     data = create_norm_data(n, eps, par_mu, par_sd, out_mu, out_cov)
     cov_hist = []

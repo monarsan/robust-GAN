@@ -3,6 +3,12 @@ import optuna
 
 
 def objective(trial):
+    lr_d = trial.suggest_float('lr_d', 0.01, 1, log=True)
+    lr_g = trial.suggest_float('lr_g', 0.01, 0.5, log=True)
+    reg_d = trial.suggest_float('reg_d', 0.000001, 0.0001, log=True)
+    reg_g = trial.suggest_float('reg_g', 0.000001, 0.0001, log=True)
+    # optim_step = trial.suggest_int('optim_step', 200, 2000, step=200)
+    decay_par_D = trial.suggest_float('decay_par_D', 0.01, 0.15, log=True)
     import numpy as np
     lr_d = trial.suggest_float('lr_d', 0.1, 1, log=True)
     lr_g = trial.suggest_float('lr_g', 0.001, 0.5, log=True)
@@ -15,6 +21,7 @@ def objective(trial):
     for _ in range(10):
         gan = GAN(10, 0.1)
         gan.dist_init('mu', 0, 5)
+        gan.data_init(1000, 3, True)
         gan.data_init(1000, 3)
         gan.model_init()
         gan.optimizer_init(lr_d, lr_g, decay_par, reg_d, reg_g, 1, 1)
