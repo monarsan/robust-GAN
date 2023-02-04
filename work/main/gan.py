@@ -45,6 +45,7 @@ class gan(object):
         self.mc_size = mc_ratio * self.data_size
         self.data, self.target_data, self.contami_data = create_norm_data(self.data_size, self.eps, self.true_mean,
                                                                           self.true_cov, self.out_mean, self.out_cov)
+        self.median = np.median(self.data, axis=0)
 
     def model_init(self, D_init_option='mle', G_init_option='kendall') -> None:
         if self.is_mu_setting():
@@ -194,7 +195,8 @@ class gan(object):
         z = self.z
         mgrad = (z - self.G)
         sig_ = self._D(z)[:, np.newaxis]
-        self.G = self.G * (1 - self.reg_g) - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(mgrad * sig_, axis=0)
+        lr_tmp = self.lr_g / (self.iter + 1) ** self.decay_par
+        self.G = self.G - lr_tmp* np.mean(mgrad * sig_, axis=0) + self.lr_g * (self.G - self.median)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
     # todo 変数名がめちゃくちゃ
