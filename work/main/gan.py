@@ -3,6 +3,7 @@ import numpy.linalg as LA
 from libs.functions import *
 from libs.create import *
 from typing import List
+from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -49,7 +50,10 @@ class gan(object):
 
     def model_init(self, D_init_option='mle', G_init_option='kendall') -> None:
         if self.is_mu_setting():
-            self.D = np.random.normal(0, 0.1, 2 * self.data_dim)
+            # self.D = np.random.normal(0, 0.1, 2 * self.data_dim)
+            tmp_b = np.random.normal(0, 0.1, self.data_dim)
+            tmp_a = -0.5 * tmp_b / self.median
+            self.D = np.concatenate([tmp_a, tmp_b], axis=0)
             self.G = np.median(self.data, axis=0)
         else:
             self.D = init_discriminator(self.data, D_init_option)
@@ -106,7 +110,7 @@ class gan(object):
         return self.G @ self.G.T
 
     # todo: add average epochs
-    def fit(self, optim_iter):
+    def fit(self, optim_iter, verbose=False):
         self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
         self.optim_iter = optim_iter
         if self.is_sigma_setting():
@@ -115,7 +119,7 @@ class gan(object):
             self.l2_loss = [LA.norm(self._est_cov() - self.true_cov, ord=2)]
         else:
             self.l2_loss = [LA.norm(self.G - self.true_mean, ord=2)]
-        for i in range(optim_iter):
+        for i in tqdm(range(optim_iter), disable=(not verbose)):
             self.iter = i
             self.z = self._z()
             self.D_data_record.append(self._D(self.data).mean())
@@ -196,7 +200,8 @@ class gan(object):
         mgrad = (z - self.G)
         sig_ = self._D(z)[:, np.newaxis]
         lr_tmp = self.lr_g / (self.iter + 1) ** self.decay_par
-        self.G = self.G - lr_tmp* np.mean(mgrad * sig_, axis=0) + self.lr_g * (self.G - self.median)
+        # print(np.mean(mgrad * sig_, axis=0))
+        self.G = self.G - lr_tmp * np.mean(mgrad * sig_, axis=0) - self.reg_g / (self.iter + 1) ** self.decay_par * (self.G - self.median)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
     # todo 変数名がめちゃくちゃ
@@ -261,7 +266,7 @@ class gan(object):
 
     def _update_u_via_GD(self):
         z = self.z
-        deriv_sig_z = deriv_sigmoid(self._u(self._z()) - self.bias)[:, np.newaxis]  # shape : (m,)
+        deriv_sig_z = deriv_sigmoid(self._u(z) - self.bias)[:, np.newaxis]  # shape : (m,)
         deriv_sig_data = deriv_sigmoid(self._u(self.data) - self.bias)[:, np.newaxis]  # shape : (m,)
         if self.is_mu_setting():
             z_sq = z ** 2
@@ -273,14 +278,18 @@ class gan(object):
             grad_a = grad_z_a - grad_data_a
             grad_b = grad_z_b - grad_data_b
             grad = np.concatenate([grad_a, grad_b], axis=0)
+            
         elif self.is_sigma_setting():
             zzT = sample_wise_outer_product(z, z)
             xxT = sample_wise_outer_product(self.data, self.data)
             grad_z = np.mean(deriv_sig_z * zzT, axis=0)  # shape : (m, d, d)
             grad_data = np.mean(deriv_sig_data * xxT, axis=0)
             grad = grad_z - grad_data
+        grad_bias = np.mean(deriv_sig_data, axis=0) - np.mean(deriv_sig_z, axis=0)
         decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_par
         self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
+        self.bias = self.bias + decayed_lr_d * grad_bias
+
 
     # funcitons for desplaying score
     def score(self, average: int) -> float:
