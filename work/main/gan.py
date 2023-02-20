@@ -24,8 +24,8 @@ class gan(object):
         # todo if message of error of this type increase, refactor
         if setting not in ['mu', 'sigma']:
             raise NameError("setting must to be mu or sigma")
-        if sigma_setting not in ['sparse', 'concentrate']:
-            raise NameError("setting must to be mu or sigma")
+        if sigma_setting not in ['sparse', 'concentrate', 'ar']:
+            raise NameError("check setting plz")
         self.setting = setting
         self.sigma_setting = sigma_setting
         self.true_mean = np.full(self.data_dim, true_mean)
@@ -37,6 +37,9 @@ class gan(object):
             elif self.is_concentrate_sigma():
                 self.true_cov = np.identity(self.data_dim)
                 self.out_cov = np.identity(self.data_dim) * 0.1
+            else:
+                self.true_cov = np.identity(self.data_dim)
+                self.out_cov = np.identity(self.data_dim)
         else:
             self.true_cov = np.identity(self.data_dim)
             self.out_cov = np.identity(self.data_dim)
@@ -47,13 +50,14 @@ class gan(object):
         self.data, self.target_data, self.contami_data = create_norm_data(self.data_size, self.eps, self.true_mean,
                                                                           self.true_cov, self.out_mean, self.out_cov)
         self.median = np.median(self.data, axis=0)
+        self.emperical_true_mean = np.mean(self.target_data, axis=0)
 
-    def model_init(self, D_init_option='mle', G_init_option='kendall') -> None:
+    def model_init(self, D_init_option='mle', G_init_option='kendall', D_init_scale=0.1) -> None:
         if self.is_mu_setting():
-            # self.D = np.random.normal(0, 0.1, 2 * self.data_dim)
-            tmp_b = np.random.normal(0, 0.1, self.data_dim)
-            tmp_a = -0.5 * tmp_b / self.median
-            self.D = np.concatenate([tmp_a, tmp_b], axis=0)
+            self.D = np.random.normal(0, D_init_scale, 2 * self.data_dim)
+            # tmp_b = np.random.normal(0, 0.1, self.data_dim)
+            # tmp_a = -0.5 * tmp_b / self.median
+            # self.D = np.concatenate([tmp_a, tmp_b], axis=0)
             self.G = np.median(self.data, axis=0)
         else:
             self.D = init_discriminator(self.data, D_init_option)
@@ -91,12 +95,12 @@ class gan(object):
                                               size=self.mc_size)
         else:
             z = np.random.multivariate_normal(mean=self.true_mean,
-                                              cov=self.G,
+                                              cov=self.G @ self.G.T,
                                               size=self.mc_size)
         return z
 
     # todo: add default par after do optuna
-    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d=0, reg_g=0, update_D_iter=1, l_smooth=1, is_mm_alg=True):
+    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d=0, reg_g=0, update_D_iter=1, l_smooth=1, is_mm_alg=True, grad_clip=0.1):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.decay_par = decay_par
@@ -105,12 +109,14 @@ class gan(object):
         self.update_D_iter = update_D_iter
         self.l_smooth = l_smooth
         self.is_mm_alg = is_mm_alg
+        self.threshold = grad_clip
 
     def _est_cov(self):
         return self.G @ self.G.T
 
     # todo: add average epochs
-    def fit(self, optim_iter, verbose=False):
+    def fit(self, optim_iter, tol=1e-6, verbose=False):
+        self.tol = tol * (self.data_dim ** 0.5)
         self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
         self.optim_iter = optim_iter
         if self.is_sigma_setting():
@@ -138,6 +144,7 @@ class gan(object):
             self.D_record.append(self.D)
             self.bias_record.append(self.bias)
             # Update G
+            self.prev_G = self.G
             if self.is_mu_setting():
                 self._GD_mu()
                 self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
@@ -149,6 +156,10 @@ class gan(object):
                 self.fro_loss.append(
                     LA.norm(self._est_cov() - self.true_cov, ord='fro'))
                 self.G_record.append(self.G @ self.G.T)
+            converged = (self.iter >= self.optim_iter) or (LA.norm(self.prev_G - self.G, axis=0) < self.tol)
+            if converged:
+                print('converged')
+                break
 
     # functions for optimization
     def _mm_alg_mu(self):
@@ -201,6 +212,8 @@ class gan(object):
         sig_ = self._D(z)[:, np.newaxis]
         lr_tmp = self.lr_g / (self.iter + 1) ** self.decay_par
         # print(np.mean(mgrad * sig_, axis=0))
+        grad = np.mean(mgrad * sig_, axis=0)  # (d,)
+        grad = self.clip(grad, self.threshold)
         self.G = self.G - lr_tmp * np.mean(mgrad * sig_, axis=0) - self.reg_g / (self.iter + 1) ** self.decay_par * (self.G - self.median)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
@@ -290,7 +303,12 @@ class gan(object):
         self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
         self.bias = self.bias + decayed_lr_d * grad_bias
 
-
+    def clip(self, x, threshold):
+        for i in range(len(x)):
+            if x[i] > threshold:
+                x[i] = threshold * x[i] / np.abs(x[i])
+        return x
+        
     # funcitons for desplaying score
     def score(self, average: int) -> float:
         return np.mean(np.array(self.l2_loss[-average:]), axis=0)
