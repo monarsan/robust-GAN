@@ -31,13 +31,13 @@ loss = []
 for i in range(5):
     print(f'{i}-th iteration')
     gan = GAN(data_dim=data_dim, eps=eps)
-    gan.dist_init(setting='mu', true_mean=5, out_mean=0)
+    gan.dist_init(setting='mu', true_mean=0, out_mean=5)
     gan.data_init(data_size=data_size, mc_ratio=3)
     gan.model_init()
     gan.optimizer_init(lr_d=1, lr_g=1, decay_par=decay_par,
                        reg_d=6e-5, reg_g=5e-4, update_D_iter=1, 
                        l_smooth=l_smooth, grad_clip=grad_clip)
-    gan.fit(optim_iter=1000, verbose=True)
+    gan.fit(optim_iter=5000, verbose=True)
     loss.append(gan.score(100))
     # plt.subplots()
     plt.figure(figsize=(12, 5))
