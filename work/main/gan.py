@@ -158,7 +158,7 @@ class gan(object):
                 self.G_record.append(self.G @ self.G.T)
             converged = (self.iter >= self.optim_iter) or (LA.norm(self.prev_G - self.G, axis=0) < self.tol)
             if converged:
-                print('converged')
+                print(f'converged at {self.iter} step')
                 break
 
     # functions for optimization
@@ -300,6 +300,7 @@ class gan(object):
             grad = grad_z - grad_data
         grad_bias = np.mean(deriv_sig_data, axis=0) - np.mean(deriv_sig_z, axis=0)
         decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_par
+        decayed_lr_d = 1
         self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
         self.bias = self.bias + decayed_lr_d * grad_bias
 

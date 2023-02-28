@@ -43,7 +43,7 @@ for i in range(3):
     gan.model_init()
     gan.optimizer_init(lr_d=lr_d, lr_g=lr_g, decay_par=decay_par,
                        reg_d=6e-5, reg_g=5e-4, update_D_iter=1,
-                       l_smooth=l_smooth, grad_clip=grad_clip)
+                       l_smooth=l_smooth, is_mm_alg=False, grad_clip=grad_clip)
     gan.fit(optim_iter=optim_iter, verbose=True)
     loss.append(gan.score(100))
     # plt.subplots()
