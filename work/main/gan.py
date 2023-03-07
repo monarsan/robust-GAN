@@ -156,10 +156,10 @@ class gan(object):
                 self.fro_loss.append(
                     LA.norm(self._est_cov() - self.true_cov, ord='fro'))
                 self.G_record.append(self.G @ self.G.T)
-            converged = (self.iter >= self.optim_iter) or (LA.norm(self.prev_G - self.G, axis=0) < self.tol)
-            if converged:
-                print(f'converged at {self.iter} step')
-                break
+            # converged = (self.iter >= self.optim_iter) or (LA.norm(self.prev_G - self.G, axis=0) < self.tol)
+            # if converged:
+            #     print(f'converged at {self.iter} step')
+            #     break
 
     # functions for optimization
     def _mm_alg_mu(self):
@@ -200,7 +200,7 @@ class gan(object):
             A_bias = np.concatenate([A7, A8, A9], axis=0)
             A = np.concatenate([A_a, A_b, A_bias[np.newaxis, :]], axis=0)
             b = np.concatenate([b1, b2, b3], axis=0)
-            decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_par
+            decayed_lr_d = self.lr_d  # / (self.iter + 1) ** self.decay_par
             new_par = LA.solve(A, b)
             self.D = self.D * (1 - decayed_lr_d) + decayed_lr_d * new_par[:-1]
             self.bias = self.bias * (1 - decayed_lr_d) + decayed_lr_d * new_par[-1]
@@ -295,12 +295,14 @@ class gan(object):
         elif self.is_sigma_setting():
             zzT = sample_wise_outer_product(z, z)
             xxT = sample_wise_outer_product(self.data, self.data)
-            grad_z = np.mean(deriv_sig_z * zzT, axis=0)  # shape : (m, d, d)
-            grad_data = np.mean(deriv_sig_data * xxT, axis=0)
+            grad_z = np.mean(deriv_sig_z[:, np.newaxis] * zzT, axis=0)  # shape : (m, d, d)
+            grad_data = np.mean(deriv_sig_data[:, np.newaxis] * xxT, axis=0)
             grad = grad_z - grad_data
         grad_bias = np.mean(deriv_sig_data, axis=0) - np.mean(deriv_sig_z, axis=0)
         decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_par
         decayed_lr_d = 1
+        if self.is_sigma_setting():
+            grad = grad.reshape(self.data_dim * self.data_dim)
         self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
         self.bias = self.bias + decayed_lr_d * grad_bias
 
