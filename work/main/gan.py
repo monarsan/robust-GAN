@@ -94,9 +94,10 @@ class gan(object):
                                               cov=np.identity(self.data_dim),
                                               size=self.mc_size)
         else:
-            z = np.random.multivariate_normal(mean=self.true_mean,
-                                              cov=self.G @ self.G.T,
-                                              size=self.mc_size)
+            self.normal = np.random.multivariate_normal(mean=self.true_mean,
+                                                        cov=np.identity(self.data_dim),   # self.G @ self.G.T,
+                                                        size=self.mc_size)
+            z = self.normal @ self.G.T
         return z
 
     # todo: add default par after do optuna
@@ -117,7 +118,8 @@ class gan(object):
     # todo: add average epochs
     def fit(self, optim_iter, tol=1e-6, verbose=False):
         self.tol = tol * (self.data_dim ** 0.5)
-        self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
+        # self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
+        self.objective = []
         self.optim_iter = optim_iter
         if self.is_sigma_setting():
             self.fro_loss = [
@@ -270,12 +272,15 @@ class gan(object):
     def _GD_sigma(self):
         data_dim = self.data_dim
         z = self.z
-        ABZ = (z @ self.D.reshape(data_dim, data_dim)) @ (self.G + self.G.T)
-        sigma_grad = sample_wise_outer_product(ABZ, z)  # (m, d, d)
-        sig_ = deriv_sigmoid(self._u(z @ self.G) - self.bias)[:, np.newaxis]  # (m,)
+        # init
+        # ABZ = (z @ self.G) @ self.D.reshape(data_dim, data_dim)
+        # sigma_grad = sample_wise_outer_product(ABZ, z)  # (m, d, d)
+        ABZ = z @ self.D.reshape(data_dim, data_dim)
+        sigma_grad = sample_wise_outer_product(ABZ, self.normal)  # (m, d, d)
+        sig_ = deriv_sigmoid(self._u(z) - self.bias)[:, np.newaxis]  # (m,)
         tmp_alpha_v = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * np.mean(sigma_grad * sig_[:, :, np.newaxis], axis=0)
         self.G = tmp_alpha_v
-        self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
+        self.objective.append(self._D(z).mean() - self._D(self.data).mean())
 
     def _update_u_via_GD(self):
         z = self.z

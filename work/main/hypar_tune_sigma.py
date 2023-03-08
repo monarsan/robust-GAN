@@ -10,7 +10,7 @@ data_dim = 2
 
 def objective(trial):
     lr_d = trial.suggest_float('lr_d', 0.01, 1, log=True)
-    lr_g = trial.suggest_float('lr_g', 0.1, 1, log=True)
+    lr_g = trial.suggest_float('lr_g', 0.01, 1, log=True)
     # reg_d = trial.suggest_float('reg_d', 1e-7, 1e-4, log=True)
     # reg_g = trial.suggest_float('reg_g', 1e-7, 1e-4, log=True)
     # decay_par_D = trial.suggest_float('decay_par_D', 0.1, 1, step=0.1)
@@ -19,19 +19,18 @@ def objective(trial):
     # l_smooth = trial.suggest_float('label_smooth', 0.8, 1.2, log=True)
     # decay_par = trial.suggest_float('decay_par', 0.4, 0.6, log=True)
     results = []
-    for _ in range(20):
+    for _ in range(10):
         gan = GAN(data_dim, 0.1)
         gan.dist_init('sigma', 0, 5, sigma_setting='ar')
         gan.data_init(1000, 3)
-        gan.model_init(D_init_option='mle', G_init_option='kendall')
+        gan.model_init(D_init_option='random', G_init_option='kendall')
         gan.optimizer_init(lr_d, lr_g, 0.95, 1e-4, 1e-4,
                            update_D_iter=1, is_mm_alg=False)
-        gan.fit(500)
+        gan.fit(100)
         results.append(gan.l2_loss)
     results = np.array(results)
-    results = results - results[:, 0, np.newaxis]
+    results = results[:, 0, np.newaxis] - results
     results = np.mean(results, axis=1)
-    print(results)
     for i in range(len(results)):
         trial.report(-results[i], step=i)
     return -np.array(results)[-1]
@@ -39,7 +38,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study()
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, n_trials=500)
     print(study.best_params)
     fig = optuna_plot.plot_parallel_coordinate(study, params=["lr_d", "lr_g"])
     fig = fig.get_figure()
