@@ -75,7 +75,6 @@ class gan(object):
                 self.G = init_covariance(self.data, G_init_option)
             self.init_G = self.G
         self.bias = self._u(self._z()).mean(axis=0)
-        self.D_record = [self.D]
         self._record_init()
 
     def _record_init(self):
@@ -319,8 +318,8 @@ class gan(object):
                 grad_data = np.mean(deriv_sig_data[:, np.newaxis] * xxT, axis=0)
                 grad = grad_z - grad_data
             grad_bias = np.mean(deriv_sig_data, axis=0) - np.mean(deriv_sig_z, axis=0)
-            # decayed_lr_d = self.lr_d / (self.iter + 1) ** 0.5
-            decayed_lr_d = self.lr_d  
+            # decayed_lr_d = self.lr_d / (self.iter + 1) ** 1
+            decayed_lr_d = self.lr_d
             if self.is_sigma_setting():
                 grad = grad.reshape(self.data_dim * self.data_dim)
             self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
