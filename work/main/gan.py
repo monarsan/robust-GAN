@@ -60,7 +60,7 @@ class gan(object):
         self.median = np.median(self.data, axis=0)
         self.emperical_true_mean = np.mean(self.target_data, axis=0)
 
-    def model_init(self, D_init_option='mle', G_init_option='kendall', D_init_scale=0.1) -> None:
+    def model_init(self, D_init_option='random', G_init_option='kendall', D_init_scale=0.1) -> None:
         if self.is_mu_setting():
             self.D = np.random.normal(0, D_init_scale, 2 * self.data_dim)
             # tmp_b = np.random.normal(0, 0.1, self.data_dim)
@@ -69,6 +69,7 @@ class gan(object):
             self.G = np.median(self.data, axis=0)
         else:
             self.D = init_discriminator(self.data, D_init_option)
+            # self.D = np.abs(self.D)
             if G_init_option == 'true':
                 self.G = LA.cholesky(self.true_cov)
             else:
@@ -76,24 +77,6 @@ class gan(object):
             self.init_G = self.G
         self.bias = self._u(self._z()).mean(axis=0)
         self._record_init()
-
-    def _record_init(self):
-        if self.is_sigma_setting():
-            self.G_record = [self.G @ self.G.T]
-        if self.is_mu_setting():
-            self.G_record = [self.G]
-        self.bias_record = [self.bias]
-        self.D_data_record = [self._D(self.data).mean()]
-        self.D_target_record = [self._D(self.target_data).mean()]
-        self.D_contami_record = [self._D(self.contami_data).mean()]
-        self.D_z_record = [self._D(self._z()).mean()]
-        self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
-        if self.is_sigma_setting():
-            self.fro_loss = [
-                LA.norm(self._est_cov() - self.true_cov, ord='fro')]
-            self.l2_loss = [LA.norm(self._est_cov() - self.true_cov, ord=2)]
-        else:
-            self.l2_loss = [LA.norm(self.G - self.true_mean, ord=2)]
 
     def _u(self, x: List[float]) -> List[float]:
         d = self.data_dim
@@ -162,22 +145,6 @@ class gan(object):
             # if converged:
             #     print(f'converged at {self.iter} step')
             #     break
-
-    def _add_record(self):
-        self.D_data_record.append(self._D(self.data).mean())
-        self.D_target_record.append(self._D(self.target_data).mean())
-        self.D_contami_record.append(self._D(self.contami_data).mean())
-        self.D_z_record.append(self._D(self.z).mean())
-        self.D_record.append(self.D)
-        self.bias_record.append(self.bias)
-        if self.is_sigma_setting():
-            self.l2_loss.append(LA.norm(self._est_cov() - self.true_cov, ord=2))
-            self.fro_loss.append(LA.norm(self._est_cov() - self.true_cov, ord='fro'))
-            self.G_record.append(self._est_cov())
-        else:
-            self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
-            self.G_record.append(self.G)
-        self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
     # functions for optimization
     def _mm_alg_mu(self):
@@ -338,6 +305,45 @@ class gan(object):
     def score_from_init(self) -> float:
         return self.l2_loss[0] - self.l2_loss[-1]
 
+    def _record_init(self):
+        self.D_record = [self.D]
+        if self.is_sigma_setting():
+            self.G_record = [self.G @ self.G.T]
+        if self.is_mu_setting():
+            self.G_record = [self.G]
+        self.bias_record = [self.bias]
+        self.D_data_record = [self._D(self.data).mean()]
+        self.D_target_record = [self._D(self.target_data).mean()]
+        self.D_contami_record = [self._D(self.contami_data).mean()]
+        self.D_z_record = [self._D(self._z()).mean()]
+        self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
+        if self.is_sigma_setting():
+            self.fro_loss = [
+                LA.norm(self._est_cov() - self.true_cov, ord='fro')]
+            self.l2_loss = [LA.norm(self._est_cov() - self.true_cov, ord=2)]
+        else:
+            self.l2_loss = [LA.norm(self.G - self.true_mean, ord=2)]
+            
+            
+    def _add_record(self):
+        
+        self.D_data_record.append(self._D(self.data).mean())
+        self.D_target_record.append(self._D(self.target_data).mean())
+        self.D_contami_record.append(self._D(self.contami_data).mean())
+        self.D_z_record.append(self._D(self.z).mean())
+        self.D_record.append(self.D)
+        self.bias_record.append(self.bias)
+        if self.is_sigma_setting():
+            self.l2_loss.append(LA.norm(self._est_cov() - self.true_cov, ord=2))
+            self.fro_loss.append(LA.norm(self._est_cov() - self.true_cov, ord='fro'))
+            self.G_record.append(self._est_cov())
+        else:
+            self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
+            self.G_record.append(self.G)
+        self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
+
+
+            
     def record_wandb(self, title=None):
         import wandb
         import pandas as pd
