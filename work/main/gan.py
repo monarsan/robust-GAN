@@ -60,7 +60,7 @@ class gan(object):
         self.median = np.median(self.data, axis=0)
         self.emperical_true_mean = np.mean(self.target_data, axis=0)
 
-    def model_init(self, D_init_option='random', G_init_option='kendall', D_init_scale=0.1) -> None:
+    def model_init(self, D_init_option='random', G_init_option='kendall', D_init_scale=1) -> None:
         if self.is_mu_setting():
             self.D = np.random.normal(0, D_init_scale, 2 * self.data_dim)
             # tmp_b = np.random.normal(0, 0.1, self.data_dim)
@@ -68,7 +68,7 @@ class gan(object):
             # self.D = np.concatenate([tmp_a, tmp_b], axis=0)
             self.G = np.median(self.data, axis=0)
         else:
-            self.D = init_discriminator(self.data, D_init_option)
+            self.D = init_discriminator(self.data, D_init_option) * D_init_scale
             # self.D = np.abs(self.D)
             if G_init_option == 'true':
                 self.G = LA.cholesky(self.true_cov)
@@ -102,16 +102,22 @@ class gan(object):
         return z
 
     # todo: add default par after do optuna
-    def optimizer_init(self, lr_d, lr_g, decay_par, reg_d=0, reg_g=0, update_D_iter=1, l_smooth=1, is_mm_alg=True, grad_clip=0.1):
+    def optimizer_init(self, lr_d, lr_g, decay_g, reg_d=0, reg_g=0, update_D_iter=1,
+                       l_smooth=1, is_mm_alg=True, grad_clip=0.1, decay_d=0,
+                       lr_schedule='exponential', step=100):
         self.lr_d = lr_d
         self.lr_g = lr_g
-        self.decay_par = decay_par
+        self.decay_g = decay_g
         self.reg_d = reg_d
         self.reg_g = reg_g
         self.update_D_iter = update_D_iter
         self.l_smooth = l_smooth
         self.is_mm_alg = is_mm_alg
         self.threshold = grad_clip
+        self.decay_d = decay_d
+        self.step = step
+        self.lr_schedule = lr_schedule
+        assert self.lr_schedule in ['exponential', 'linear', 'step']
 
     def _est_cov(self):
         return self.G @ self.G.T
@@ -185,7 +191,7 @@ class gan(object):
             A_bias = np.concatenate([A7, A8, A9], axis=0)
             A = np.concatenate([A_a, A_b, A_bias[np.newaxis, :]], axis=0)
             b = np.concatenate([b1, b2, b3], axis=0)
-            decayed_lr_d = self.lr_d  # / (self.iter + 1) ** self.decay_par
+            decayed_lr_d = self._learning_rate_schedule(self.lr_d, self.decay_d, self.step)
             new_par = LA.solve(A, b)
             self.D = self.D * (1 - decayed_lr_d) + decayed_lr_d * new_par[:-1]
             self.bias = self.bias * (1 - decayed_lr_d) + decayed_lr_d * new_par[-1]
@@ -195,10 +201,10 @@ class gan(object):
         z = self.z
         mgrad = (z - self.G)
         sig_ = self._D(z)[:, np.newaxis]
-        lr_tmp = self.lr_g / (self.iter + 1) ** self.decay_par
+        lr_tmp = self._learning_rate_schedule(self.lr_g, self.decay_g, self.step)
         grad = np.mean(mgrad * sig_, axis=0)  # (d,)
         grad = self.clip(grad, self.threshold)
-        self.G = self.G - lr_tmp * np.mean(mgrad * sig_, axis=0) - self.reg_g / (self.iter + 1) ** self.decay_par * (self.G - self.median)
+        self.G = self.G - lr_tmp * np.mean(mgrad * sig_, axis=0) - self.reg_g / (self.iter + 1) ** self.decay_g * (self.G - self.median)
 
     # todo 変数名がめちゃくちゃ
     def _mm_alg_sigma(self):
@@ -242,7 +248,7 @@ class gan(object):
                 [A_bias_row_reshaped, np.array(bias_bias)[np.newaxis, np.newaxis]], axis=1)
             A_ = np.concatenate([A_concated, A_bias_row_concated], axis=0)
             b = np.concatenate([A_b_reshaped, b_bias[np.newaxis]], axis=0)
-            decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_par
+            decayed_lr_d = self._learning_rate_schedule(self.lr_d, self.decay_d, self.step)
             new_par = LA.solve(A_, b)
             self.D = self.D * (1 - decayed_lr_d) + decayed_lr_d * new_par[:-1]
             self.bias = self.bias * (1 - decayed_lr_d) + decayed_lr_d * new_par[-1]
@@ -260,7 +266,8 @@ class gan(object):
         sigma_grad = sample_wise_outer_product(ABZ, self.normal)  # (m, d, d)
         sig_ = deriv_sigmoid(self._u(z) - self.bias)[:, np.newaxis]  # (m,)
         grad = np.mean(sigma_grad * sig_[:, :, np.newaxis], axis=0) + (self.G - self.init_G) * self.reg_g
-        tmp_alpha_v = self.G - self.lr_g / (self.iter + 1) ** self.decay_par * grad
+        tmp_lr_g = self._learning_rate_schedule(self.lr_g, self.decay_g, self.step)
+        tmp_alpha_v = self.G - tmp_lr_g * grad
         self.G = tmp_alpha_v
         
     def _update_u_via_GD(self):
@@ -285,8 +292,9 @@ class gan(object):
                 grad_data = np.mean(deriv_sig_data[:, np.newaxis] * xxT, axis=0)
                 grad = grad_z - grad_data
             grad_bias = np.mean(deriv_sig_data, axis=0) - np.mean(deriv_sig_z, axis=0)
-            # decayed_lr_d = self.lr_d / (self.iter + 1) ** 1
-            decayed_lr_d = self.lr_d
+            # decayed_lr_d = self.lr_d / (self.iter + 1) ** self.decay_d
+            decayed_lr_d = self._learning_rate_schedule(self.lr_d, self.decay_d, self.step)
+            # decayed_lr_d = self.lr_d
             if self.is_sigma_setting():
                 grad = grad.reshape(self.data_dim * self.data_dim)
             self.D = self.D * (1 - self.reg_d) + decayed_lr_d * grad
@@ -297,7 +305,15 @@ class gan(object):
             if x[i] > threshold:
                 x[i] = threshold * x[i] / np.abs(x[i])
         return x
-        
+    
+    def _learning_rate_schedule(self, lr, decay, step=100):
+        if self.lr_schedule == 'linear':
+            return lr / (self.iter + 1) ** decay
+        elif self.lr_schedule == 'exp':
+            return lr * np.exp(-decay * self.iter)
+        elif self.lr_schedule == 'step':
+            return lr * (decay ** (self.iter // step))
+            
     # funcitons for desplaying score
     def score(self, average: int) -> float:
         return np.mean(np.array(self.l2_loss[-average:]), axis=0)
@@ -324,9 +340,7 @@ class gan(object):
         else:
             self.l2_loss = [LA.norm(self.G - self.true_mean, ord=2)]
             
-            
     def _add_record(self):
-        
         self.D_data_record.append(self._D(self.data).mean())
         self.D_target_record.append(self._D(self.target_data).mean())
         self.D_contami_record.append(self._D(self.contami_data).mean())
@@ -342,8 +356,6 @@ class gan(object):
             self.G_record.append(self.G)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
 
-
-            
     def record_wandb(self, title=None):
         import wandb
         import pandas as pd
@@ -428,16 +440,21 @@ class gan(object):
         plt.legend()
 
         plt.subplot(row_num, col_num, 4)
-        plt.plot(np.array(self.G_record).reshape((len(self.G_record)), self.data_dim ** 2))
+        if self.is_sigma_setting():
+            plt.plot(np.array(self.G_record).reshape((len(self.G_record)), self.data_dim ** 2))
+        else:
+            plt.plot(np.array(self.G_record).reshape((len(self.G_record)), self.data_dim))
         plt.xlabel('optim step')
         plt.ylabel('component of sigma')
         plt.title(f'data dim is {self.data_dim}')
 
+        diag = [i * self.data_dim + i for i in range(self.data_dim)]
+        not_diag = [i for i in range(self.data_dim ** 2) if i not in diag]
         plt.subplot(row_num, col_num, 5)
-        plt.plot(np.array(self.D_record)[:, :self.data_dim])
-        plt.title('second order')
+        plt.plot(np.array(self.D_record)[:, diag])
+        plt.title('diag')
         plt.subplot(row_num, col_num, 6)
-        plt.plot(np.array(self.D_record)[:, self.data_dim:])
-        plt.title('first order')
+        plt.plot(np.array(self.D_record)[:, not_diag])
+        plt.title('non diag')
         
         
