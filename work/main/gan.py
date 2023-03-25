@@ -5,6 +5,7 @@ from libs.create import *
 from typing import List
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import os
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -329,8 +330,10 @@ class gan(object):
             self.G_record = [self.G]
         self.bias_record = [self.bias]
         self.D_data_record = [self._D(self.data).mean()]
-        self.D_target_record = [self._D(self.target_data).mean()]
-        self.D_contami_record = [self._D(self.contami_data).mean()]
+        self.D_target_record_mean = [self._D(self.target_data).mean()]
+        self.D_contami_record_mean = [self._D(self.contami_data).mean()]
+        self.D_target_record_std = [self._D(self.target_data).std()]
+        self.D_contami_record_std = [self._D(self.contami_data).std()]
         self.D_z_record = [self._D(self._z()).mean()]
         self.objective = [self._D(self._z()).mean() - self._D(self.data).mean()]
         if self.is_sigma_setting():
@@ -342,8 +345,12 @@ class gan(object):
             
     def _add_record(self):
         self.D_data_record.append(self._D(self.data).mean())
-        self.D_target_record.append(self._D(self.target_data).mean())
-        self.D_contami_record.append(self._D(self.contami_data).mean())
+        tgt = self.target_data
+        cont = self.contami_data
+        self.D_target_record_mean.append(self._D(tgt).mean())
+        self.D_contami_record_mean.append(self._D(cont).mean())
+        self.D_target_record_std.append(self._D(tgt).std())
+        self.D_contami_record_std.append(self._D(cont).std())
         self.D_z_record.append(self._D(self.z).mean())
         self.D_record.append(self.D)
         self.bias_record.append(self.bias)
@@ -355,7 +362,18 @@ class gan(object):
             self.l2_loss.append(LA.norm(self.G - self.true_mean, ord=2))
             self.G_record.append(self.G)
         self.objective.append(self._D(self.z).mean() - self._D(self.data).mean())
-
+        
+    def record_npy(self, rcd_dir: str, rcd_name: str) -> None:
+        path = os.path.join(rcd_dir, rcd_name)
+        os.makedirs(path, exist_ok=True)
+        self.path = path
+        np.save(f'{path}/D.npy', np.array(self.D_record))
+        np.save(f'{path}/G.npy', np.array(self.G_record))
+        np.save(f'{path}/bias.npy', np.array(self.bias_record))
+        np.save(f'{path}/l2_loss.npy', np.array(self.l2_loss))
+        if self.is_sigma_setting():
+            np.save(f'{path}/fro_loss.npy', np.array(self.fro_loss))
+        
     def record_wandb(self, title=None):
         import wandb
         import pandas as pd
@@ -415,10 +433,10 @@ class gan(object):
         return self.sigma_setting == 'concentrate'
 
 # plot method
-    def plot(self):
-        col_num = 3
+    def plot(self, fig_scale=1):
+        col_num = 4
         row_num = 2
-        plt.figure(figsize=(6.5 * col_num, 5 * row_num))
+        plt.figure(figsize=(6.5 * col_num * fig_scale, 5 * row_num * fig_scale))
         plt.subplot(row_num, col_num, 1)
         plt.plot(self.l2_loss)
         plt.xlabel('optim step')
@@ -434,7 +452,7 @@ class gan(object):
         # plt.legend()
         plt.subplot(row_num, col_num, 3)
         plt.plot(self.D_data_record, label='target')
-        plt.plot(self.D_contami_record, label='contami')
+        plt.plot(self.D_contami_record_mean, label='contami')
         plt.plot(self.D_z_record, label='z')
         plt.title(f'{self.update_D_iter} inner loop')
         plt.legend()
@@ -457,4 +475,12 @@ class gan(object):
         plt.plot(np.array(self.D_record)[:, not_diag])
         plt.title('non diag')
         
+        plt.subplot(row_num, col_num, 7)
+        plt.errorbar(np.arange(len(self.D_target_record_mean)), self.D_target_record_mean, yerr=self.D_target_record_std, lw=0.1)
+        plt.title('target')
+        
+        plt.subplot(row_num, col_num, 8)
+        plt.errorbar(np.arange(len(self.D_contami_record_mean)), self.D_contami_record_mean, yerr=self.D_contami_record_std, lw=0.1)
+        plt.title('contami')
+        plt.savefig(f'{self.path}/plt.png')
         
