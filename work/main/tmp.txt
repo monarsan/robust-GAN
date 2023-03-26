@@ -1,0 +1,20 @@
+exe
+/optuna create-study --study-name "distributed" --storage "mysql://root@localhost/robustGAN"
+
+
+write to my.cnf
+[client]
+socket=/tmp/mysql.sock
+[mysqld]
+socket=/tmp/mysql.sock
+
+where to write
+/etc/my.cnf /etc/mysql/my.cnf ~/.my.cnf
+
+
+now 
+permission denied
+
+
+
+/var/run/mysqld/mysqld.sock
