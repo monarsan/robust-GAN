@@ -105,7 +105,7 @@ class gan(object):
     # todo: add default par after do optuna
     def optimizer_init(self, lr_d, lr_g, decay_g, reg_d=0, reg_g=0, update_D_iter=1,
                        l_smooth=1, is_mm_alg=True, grad_clip=0.1, decay_d=0,
-                       lr_schedule='exponential', step=100):
+                       lr_schedule='exp', step=100):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.decay_g = decay_g
@@ -118,7 +118,7 @@ class gan(object):
         self.decay_d = decay_d
         self.step = step
         self.lr_schedule = lr_schedule
-        assert self.lr_schedule in ['exponential', 'linear', 'step']
+        assert self.lr_schedule in ['exp', 'linear', 'step']
 
     def _est_cov(self):
         return self.G @ self.G.T
@@ -309,9 +309,9 @@ class gan(object):
     
     def _learning_rate_schedule(self, lr, decay, step=100):
         if self.lr_schedule == 'linear':
-            return lr / (self.iter + 1) ** decay
+            return lr * (1 - self.iter / self.optim_iter)
         elif self.lr_schedule == 'exp':
-            return lr * np.exp(-decay * self.iter)
+            return lr / (self.iter + 1) ** decay
         elif self.lr_schedule == 'step':
             return lr * (decay ** (self.iter // step))
             
@@ -466,14 +466,22 @@ class gan(object):
         plt.ylabel('component of sigma')
         plt.title(f'data dim is {self.data_dim}')
 
-        diag = [i * self.data_dim + i for i in range(self.data_dim)]
-        not_diag = [i for i in range(self.data_dim ** 2) if i not in diag]
-        plt.subplot(row_num, col_num, 5)
-        plt.plot(np.array(self.D_record)[:, diag])
-        plt.title('diag')
-        plt.subplot(row_num, col_num, 6)
-        plt.plot(np.array(self.D_record)[:, not_diag])
-        plt.title('non diag')
+        if self.is_sigma_setting():
+            diag = [i * self.data_dim + i for i in range(self.data_dim)]
+            not_diag = [i for i in range(self.data_dim ** 2) if i not in diag]
+            plt.subplot(row_num, col_num, 5)
+            plt.plot(np.array(self.D_record)[:, diag])
+            plt.title('diag')
+            plt.subplot(row_num, col_num, 6)
+            plt.plot(np.array(self.D_record)[:, not_diag])
+            plt.title('non diag')
+        else:
+            plt.subplot(row_num, col_num, 5)
+            plt.plot(np.array(self.D_record)[:, :self.data_dim])
+            plt.title('linear')
+            plt.subplot(row_num, col_num, 6)
+            plt.plot(np.array(self.D_record)[:, self.data_dim:])
+            plt.title('square')
         
         plt.subplot(row_num, col_num, 7)
         plt.errorbar(np.arange(len(self.D_target_record_mean)), self.D_target_record_mean, yerr=self.D_target_record_std, lw=0.1)
