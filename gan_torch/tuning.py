@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import os
 
 
-tuning_name = 'naive-tuning'
+tuning_name = 'quad-tuning'
 data_dim = 5
 rcd_dir = f'optuna/{tuning_name}/'
 os.makedirs(rcd_dir, exist_ok=True)
@@ -22,7 +22,7 @@ def objective(trial):
         out_mean = np.ones(data_dim) * 5
         gan.dist_init(true_mean, out_mean)
         gan.data_init(1000, 25)
-        gan.model_init()
+        gan.model_init(D_model='quadratic')
         gan.optimizer_init(lr_d, lr_g, 5, 1)
         gan.fit(1500)
         results.append(gan.mean_err_record[-1])
@@ -31,7 +31,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=400)
+    study.optimize(objective, n_trials=100)
     
     print(study.best_params)
     with open(f'{rcd_dir}best_params.txt', mode='w') as f:
