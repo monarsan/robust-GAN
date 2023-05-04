@@ -13,7 +13,11 @@ class Discriminator_linear(nn.Module):
     def forward(self, x):
         return torch.sum(x * self.params, dim=1) - self.bias
     
-
+    def norm(self):
+        norm = self.params.norm(p=2) ** 2
+        return norm.mean() + self.bias ** 2
+    
+    
 class Discriminator_quadraric(nn.Module):
     def __init__(self, data_dim) -> None:
         super().__init__()
@@ -27,6 +31,10 @@ class Discriminator_quadraric(nn.Module):
         x2 = x ** 2
         ord2 = torch.sum(x2 * self.par_ord2, dim=1)
         return ord1 + ord2 - self.bias
+    
+    def norm(self):
+        norm = torch.concat((self.par_ord1, self.par_ord2)).norm(p=2) ** 2
+        return norm.mean() + self.bias ** 2
     
     
 class Generator_mu(nn.Module):
@@ -52,7 +60,7 @@ class Discriminator_sigma(nn.Module):
     def forward(self, x):
         # todo : check if this is correct
         Ax = torch.matmul(self.params, x.T)
-        x = torch.dot(Ax, x)
+        x = torch.matmul(Ax, x)
         return x - self.bias
     
     
@@ -60,8 +68,11 @@ class Generator_sigma(nn.Module):
     def __init__(self, data_dim) -> None:
         super().__init__()
         self.data_dim = data_dim
-        self.params = nn.Parameter(torch.randn(self.data_dim, self.data_dim))
+        self.est_sigma = nn.Parameter(torch.randn(self.data_dim, self.data_dim))
 
     def forward(self, x):
-        return torch.matmul(self.params, x.T).T
+        return torch.matmul(self.est_sigma, x.T).T
+
+    def est_cov(self):
+        return torch.matmul(self.est_sigma, self.est_sigma.T)
     
