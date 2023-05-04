@@ -37,9 +37,9 @@ def objective(trial):
 
 
 if __name__ == "__main__":
-    pruner = optuna.pruners.ThresholdPruner(upper=3)
+    pruner = optuna.pruners.ThresholdPruner(upper=4)
     study = optuna.create_study(direction='minimize', pruner=pruner)
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=500)
     
     print(study.best_params)
     with open(f'{rcd_dir}best_params.txt', mode='w') as f:

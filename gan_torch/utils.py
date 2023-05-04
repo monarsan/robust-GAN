@@ -20,6 +20,8 @@ def kendall(X):
             corr[i, j] = np.sin(np.pi / 2 * kendalltau(X[:, i], X[:, j])[0])
             corr[j, i] = corr[i, j]
     cov = s.reshape(p, 1) * corr * s.reshape(1, p)
+    u, s, vt = np.linalg.svd(cov)
+    cov = np.matmul(np.diag(s)**(1/2), vt).T
     return cov
 
 

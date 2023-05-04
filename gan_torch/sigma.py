@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from tqdm import trange
 from gan_torch import gan
 from utils import kendall
+from torch.optim.lr_scheduler import StepLR
 
 
 class Sigma(gan):
@@ -23,12 +24,13 @@ class Sigma(gan):
     def model_init(self):
         self.D = Discriminator_sigma(self.data_dim).to(self.device)
         self.G = Generator_sigma(self.data_dim).to(self.device)
-        self.G_init = torch.tensor(kendall(self.data.data))
+        self.G_init = torch.tensor(kendall(self.data.data.numpy()))
         self.G.est_sigma.data = torch.tensor(self.G_init, dtype=torch.float32).to(self.device)
         
     def optimizer_init(self, lr_d, lr_g, d_steps, g_steps, weight_decay_d=0, weight_decay_g=0):
-        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d,)
+        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d)
         self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g)
+        self.scheduler = StepLR(self.G_optimizer, step_size=200, gamma=0.2)
         self.d_steps = d_steps
         self.g_steps = g_steps
         self.weight_decay_d = weight_decay_d
@@ -39,7 +41,7 @@ class Sigma(gan):
         self.loss_G = []
         self.sigma_err_record = []
         self.sigma_est_record = []
-        z_b = torch.zeros(self.batch_size, self.data_dim).to(self.device)
+        z_b = torch.zeros(self.batch_size * 3, self.data_dim).to(self.device)
         current_d_step = 1
         for ep in trange(epochs):
             loss_D_ep = []
@@ -57,7 +59,7 @@ class Sigma(gan):
                 d_fake_score = self.D(x_fake)
                 d_fake_score = - torch.sigmoid(d_fake_score)
                 d_loss = d_fake_score + d_real_score
-                reg_d = self.weight_decay_d * (self.D.params.norm(p=2)) ** 2
+                reg_d = self.weight_decay_d * self.D.norm()
                 d_loss = d_loss.mean() + reg_d
                 d_loss.backward()
                 loss_D_ep.append(d_loss.item())
@@ -75,29 +77,36 @@ class Sigma(gan):
                     x_fake = self.G(z_b.normal_())
                     d_fake_score = self.D(x_fake)
                     g_loss = torch.sigmoid(d_fake_score).mean()
-                    reg = self.weight_decay_g * (self.G.est_sigma - self.G_init).norm(p=2)
+                    reg = self.weight_decay_g * (self.G.est_sigma - self.G_init).norm(p=2) ** 2
                     g_loss = g_loss + reg
                     g_loss.backward()
                     loss_G_ep.append(g_loss.item())
                     self.G_optimizer.step()
+            self.scheduler.step()
             self.sigma_err_record.append(
                 (self.G.est_cov() - self.true_cov).norm(p=2).item()
             )
-            self.sigma_est_record.append(self.G.est_cov())
+            self.sigma_est_record.append(self.G.est_cov().detach().numpy())
             self.loss_D.append(np.mean(loss_D_ep))
             self.loss_G.append(np.mean(loss_G_ep))
         self.sigma_err_record = np.array(self.sigma_err_record)
+        self.sigma_est_record = np.array(self.sigma_est_record)
             
     def plot(self):
+        col = 4
+        row = 1
+        plt.figure(figsize=(25, 5))
+        plt.subplot(row, col, 1)
         plt.plot(self.loss_D)
         plt.title('loss_D')
-        plt.show()
-        
+        plt.subplot(row, col, 2)
         plt.plot(self.loss_G)
         plt.title('loss_G')
-        plt.show()
-        
-        plt.plot(self.cov_err_record)
+        plt.subplot(row, col, 3)
+        plt.plot(self.sigma_err_record)
         plt.title('Error')
+        plt.subplot(row, col, 4)
+        plt.plot(self.sigma_est_record.reshape(-1, self.data_dim ** 2))
+        plt.title('Sigma est record')
         plt.show()
             
