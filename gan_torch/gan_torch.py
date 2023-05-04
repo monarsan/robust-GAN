@@ -55,14 +55,15 @@ class Mu(gan):
         elif D_model == 'linear':
             self.D = Discriminator_linear(self.data_dim).to(self.device)
         self.G = Generator_mu(self.data_dim).to(self.device)
-        data_median = torch.median(self.data.data, dim=0)[0]
-        self.G.est_mean.data = data_median
+        self.data_median = torch.median(self.data.data, dim=0)[0]
+        self.G.est_mean.data = self.data_median
         
-    def optimizer_init(self, lr_d, lr_g, d_steps, g_steps):
-        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d)
-        self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g)
+    def optimizer_init(self, lr_d, lr_g, d_steps, g_steps, weight_decay_d=0, weight_decay_g=0):
+        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d, weight_decay=weight_decay_d)
+        self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g, weight_decay=weight_decay_g)
         self.d_steps = d_steps
         self.g_steps = g_steps
+        self.weight_decay_g = weight_decay_g
     
     def fit(self, epochs):
         self.loss_D = []
@@ -70,8 +71,6 @@ class Mu(gan):
         self.mean_err_record = []
         self.mean_est_record = []
         z_b = torch.zeros(self.batch_size, self.data_dim).to(self.device)
-        one_b = torch.ones(self.batch_size).to(self.device)
-        criterion = torch.nn.BCEWithLogitsLoss()
         current_d_step = 1
         for ep in trange(epochs):
             loss_D_ep = []
@@ -83,14 +82,15 @@ class Mu(gan):
                 #  D loss
                 x_real = data.to(self.device)
                 d_real_score = self.D(x_real)
-                d_real_loss = d_real_score
-                d_real_loss = criterion(d_real_loss, 1 - one_b)
+                d_real_loss = torch.sigmoid(d_real_score)
+                # d_real_loss = criterion(d_real_loss, 1 - one_b)
                 #  G loss
                 x_fake = self.G(z_b.normal_())
                 d_fake_score = self.D(x_fake)
-                d_fake_score = d_fake_score
-                d_fake_loss = criterion(d_fake_score, one_b)
+                d_fake_loss = - torch.sigmoid(d_fake_score)
+                # d_fake_loss = criterion(d_fake_score, one_b)
                 d_loss = d_fake_loss + d_real_loss
+                d_loss = d_loss.mean()
                 d_loss.backward()
                 loss_D_ep.append(d_loss.item())
                 self.D_optimizer.step()
@@ -106,8 +106,10 @@ class Mu(gan):
                     self.G.zero_grad()
                     x_fake = self.G(z_b.normal_())
                     d_fake_score = self.D(x_fake)
-                    d_fake_score = d_fake_score
-                    g_loss = criterion(d_fake_score, 1 - one_b)
+                    g_loss = torch.sigmoid(d_fake_score).mean()
+                    reg = self.weight_decay_g * (self.G.est_mean - self.data_median).norm(p=2)
+                    # g_loss = criterion(d_fake_score, 1 - one_b)
+                    g_loss = g_loss + reg
                     g_loss.backward()
                     loss_G_ep.append(g_loss.item())
                     self.G_optimizer.step()
@@ -117,6 +119,7 @@ class Mu(gan):
             self.mean_est_record.append(self.G.est_mean.data)
             self.loss_D.append(np.mean(loss_D_ep))
             self.loss_G.append(np.mean(loss_G_ep))
+        self.mean_err_record = np.array(self.mean_err_record)
     
     def plot(self):
         plt.plot(self.loss_D)
