@@ -6,19 +6,19 @@ import matplotlib.pyplot as plt
 import os
 
 
-tuning_name = 'quad-tuning-reg'
+tuning_name = 'quad-tuning-lr'
 data_dim = 10
-rcd_dir = f'optuna/mu/{tuning_name}-{data_dim}/'
+rcd_dir = f'optuna/sigma/{tuning_name}-{data_dim}/'
 os.makedirs(rcd_dir, exist_ok=True)
 
 
 def objective(trial):
-    lr_d = 0.01
-    lr_g = 0.3
+    lr_d = trial.suggest_float('lr_d', 1e-3, 1e-1, log=True)
+    lr_g = trial.suggest_float('lr_g', 1e-3, 1e-1, log=True)
     decay_d = trial.suggest_float('decay_d', 1e-5, 1e-1, log=True)
     decay_g = trial.suggest_float('decay_g', 1e-5, 1e-1, log=True)
     results = []
-    for i in range(5):
+    for i in range(10):
         gan = Mu(data_dim, 0.1, 'cpu')
         true_mean = np.zeros(data_dim)
         out_mean = np.ones(data_dim) * 5
@@ -36,9 +36,9 @@ def objective(trial):
 
 
 if __name__ == "__main__":
-    pruner = optuna.pruners.ThresholdPruner(upper=0.4)
+    pruner = optuna.pruners.ThresholdPruner(upper=0.3)
     study = optuna.create_study(direction='minimize', pruner=pruner)
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=200)
     
     print(study.best_params)
     with open(f'{rcd_dir}best_params.txt', mode='w') as f:

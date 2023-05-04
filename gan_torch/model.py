@@ -47,21 +47,25 @@ class Generator_mu(nn.Module):
         return self.est_mean + x
     
     
-# models for estimating covariance  
+# models for estimating covariance
 class Discriminator_sigma(nn.Module):
     def __init__(self, data_dim) -> None:
         super().__init__()
         self.data_dim = data_dim
-        matrix = torch.randn(self.data_dim, self.data_dim) * 0.1
+        matrix = torch.randn(self.data_dim, self.data_dim) * 0.01
         matrix = 0.5 * (matrix + matrix.T)
         self.params = nn.Parameter(matrix)
         self.bias = nn.Parameter(torch.zeros(1))
         
     def forward(self, x):
-        # todo : check if this is correct
         Ax = torch.matmul(self.params, x.T)
         x = torch.matmul(Ax, x)
         return x - self.bias
+    
+    def norm(self):
+        A = self.params.norm(p=2) ** 2
+        b = self.bias ** 2
+        return A + b
     
     
 class Generator_sigma(nn.Module):
