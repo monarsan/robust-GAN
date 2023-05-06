@@ -13,7 +13,7 @@ class gan():
         self.data_dim = data_dim
         self.eps = eps
         self.device = device if device is not None \
-                      else torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+                      else torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
     
     def dist_init(self, true_mean, out_mean, true_cov, out_cov):
         self.true_mean = torch.tensor(true_mean, dtype=torch.float32)
@@ -33,7 +33,16 @@ class gan():
         self.true_data = self.data.true_sumple
         self._out_data = self.data.out_sumple
         self.batch_size = batch_size
-        self.dataloader = DataLoader(self.data, batch_size=batch_size, shuffle=True)
+        if self.device != 'cpu':
+            self.dataloader = DataLoader(self.data,
+                                         batch_size=batch_size,
+                                         shuffle=True,
+                                         pin_memory=True,
+                                         num_workers=4)
+        else:
+            self.dataloader = DataLoader(self.data,
+                                         batch_size=batch_size,
+                                         shuffle=True)
 
 
 

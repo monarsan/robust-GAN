@@ -20,11 +20,12 @@ class Sigma(gan):
         
     def data_init(self, data_size, batch_size):
         super().data_init(data_size, batch_size)
+        self.true_cov = torch.tensor(self.true_cov, dtype=torch.float32).to(self.device)
     
     def model_init(self):
         self.D = Discriminator_sigma(self.data_dim).to(self.device)
         self.G = Generator_sigma(self.data_dim).to(self.device)
-        self.G_init = torch.tensor(kendall(self.data.data.numpy()))
+        self.G_init = torch.tensor(kendall(self.data.data.numpy())).to(self.device)
         self.G.est_sigma.data = torch.tensor(self.G_init, dtype=torch.float32).to(self.device)
         
     def optimizer_init(self, lr_d, lr_g, d_steps, g_steps, weight_decay_d=0, weight_decay_g=0):
@@ -86,7 +87,7 @@ class Sigma(gan):
             self.sigma_err_record.append(
                 (self.G.est_cov() - self.true_cov).norm(p=2).item()
             )
-            self.sigma_est_record.append(self.G.est_cov().detach().numpy())
+            self.sigma_est_record.append(self.G.est_cov().cpu().detach().numpy())
             self.loss_D.append(np.mean(loss_D_ep))
             self.loss_G.append(np.mean(loss_G_ep))
         self.sigma_err_record = np.array(self.sigma_err_record)

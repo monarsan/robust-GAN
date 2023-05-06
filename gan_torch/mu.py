@@ -1,9 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from data import contaminated_data
 from model import Discriminator_linear, Discriminator_quadraric, Generator_mu
-from torch.utils.data import DataLoader
 from tqdm import trange
 from gan_torch import gan
 
@@ -19,6 +17,7 @@ class Mu(gan):
     
     def data_init(self, data_size, batch_size):
         super().data_init(data_size, batch_size)
+        self.trru_mean = self.true_mean.to(self.device)
         
     def model_init(self, D_model='quadratic'):
         assert D_model in ['quadratic', 'linear']
@@ -27,7 +26,7 @@ class Mu(gan):
         elif D_model == 'linear':
             self.D = Discriminator_linear(self.data_dim).to(self.device)
         self.G = Generator_mu(self.data_dim).to(self.device)
-        self.data_median = torch.median(self.data.data, dim=0)[0]
+        self.data_median = torch.median(self.data.data, dim=0)[0].to(self.device)
         self.G.est_mean.data = self.data_median
         
     def optimizer_init(self, lr_d, lr_g, d_steps, g_steps, weight_decay_d=0, weight_decay_g=0):
