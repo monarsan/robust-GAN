@@ -1,11 +1,2 @@
-*.r
-*.npy
-*.png
-/docker-compose.yml
-/Dockerfile
-/exp-kernel/
-/work/data/
-/work/experiment/
-/work/exp-kernel.ipynb
-/work/robust-GAN.ipynb
-/work/test.ipynb
+work/
+*.csv
