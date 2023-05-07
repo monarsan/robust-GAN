@@ -96,10 +96,11 @@ class Mu(gan):
             self.mean_err_record.append(
                 (self.G.est_mean.data - self.true_mean).norm(p=2).item()
             )
-            self.mean_est_record.append(self.G.est_mean.data.numpy())
+            self.mean_est_record.append(self.G.est_mean.data.clone().cpu().numpy())
             self.loss_D.append(np.mean(loss_D_ep))
             self.loss_G.append(np.mean(loss_G_ep))
         self.mean_err_record = np.array(self.mean_err_record)
+        self.mean_est_record = np.array(self.mean_est_record)
     
     def plot(self):
         col = 4
