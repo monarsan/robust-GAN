@@ -29,15 +29,23 @@ class Mu(gan):
         self.data_median = torch.median(self.data.data, dim=0)[0].to(self.device)
         self.G.est_mean.data = self.data_median
         
-    def optimizer_init(self, lr_d, lr_g, d_steps, g_steps, weight_decay_d=0, weight_decay_g=0):
+    def optimizer_init(self, lr_d, lr_g, d_steps, g_steps,
+                       weight_decay_d=0, weight_decay_g=0,
+                       scheduler='exp' ,gamma=0.9, step_size=100):
         self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d)
         self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g)
         self.d_steps = d_steps
         self.g_steps = g_steps
         self.weight_decay_d = weight_decay_d
         self.weight_decay_g = weight_decay_g
-    
-    def fit(self, epochs):
+        if scheduler == 'exp':
+            self.scheduler_G = torch.optim.lr_scheduler.ExponentialLR(self.G_optimizer, gamma=gamma)
+        elif scheduler == 'step':
+            self.scheduler_G = torch.optim.lr_scheduler.StepLR(self.G_optimizer, step_size=step_size, gamma=gamma)
+        
+    def fit(self, epochs, check_num=10, threshold=1e-5):
+        self.check_num = check_num
+        self.threshold = threshold
         self.loss_D = []
         self.loss_G = []
         self.mean_err_record = []
@@ -45,6 +53,9 @@ class Mu(gan):
         z_b = torch.zeros(self.batch_size, self.data_dim).to(self.device)
         current_d_step = 1
         for ep in trange(epochs):
+            # if (ep > self.check_num + 1):
+            #     if self.check_convergence():
+            #         break
             loss_D_ep = []
             loss_G_ep = []
             for _, data in enumerate(self.dataloader):
@@ -64,9 +75,9 @@ class Mu(gan):
                 #  G loss
                 x_fake = self.G(z_b.normal_())
                 x_fake_normalized = (x_fake - mean_in) / std_in
-                d_fake_score = self.D(x_fake)
+                d_fake_score = self.D(x_fake_normalized)
                 d_fake_score_normalized = (d_fake_score - mean_out) / std_out
-                d_fake_loss = - torch.sigmoid(d_fake_score)
+                d_fake_loss = - torch.sigmoid(d_fake_score_normalized)
                 reg_d = self.weight_decay_d * self.D.norm()
                 d_loss = d_fake_loss + d_real_loss
                 d_loss = d_loss.mean() + reg_d
@@ -93,6 +104,7 @@ class Mu(gan):
                     g_loss.backward()
                     loss_G_ep.append(g_loss.item())
                     self.G_optimizer.step()
+            self.scheduler_G.step()
             self.mean_err_record.append(
                 (self.G.est_mean.data - self.true_mean).norm(p=2).item()
             )
@@ -102,6 +114,14 @@ class Mu(gan):
         self.mean_err_record = np.array(self.mean_err_record)
         self.mean_est_record = np.array(self.mean_est_record)
     
+    def check_convergence(self):
+        last = self.mean_est_record[-self.check_num:]
+        last = np.array(last)
+        last_std = last.std(axis=0)
+        condition = np.linalg.norm(last_std, ord=2)/np.sqrt(self.data_dim) < self.threshold
+        return condition
+
+
     def plot(self):
         col = 4
         row = 1
