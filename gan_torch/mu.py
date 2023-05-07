@@ -53,11 +53,19 @@ class Mu(gan):
                 self.D.zero_grad()
                 #  D loss
                 x_real = data.to(self.device)
-                d_real_score = self.D(x_real)
-                d_real_loss = torch.sigmoid(d_real_score)
+                mean_in = x_real.mean(dim=0).detach()
+                std_in = x_real.std(dim=0).detach()
+                x_real_normalized = (x_real - mean_in) / std_in
+                d_real_score = self.D(x_real_normalized)
+                mean_out = d_real_score.mean().detach()
+                std_out = d_real_score.std().detach()
+                d_real_score_normalized = (d_real_score - mean_out) / std_out
+                d_real_loss = torch.sigmoid(d_real_score_normalized)
                 #  G loss
                 x_fake = self.G(z_b.normal_())
+                x_fake_normalized = (x_fake - mean_in) / std_in
                 d_fake_score = self.D(x_fake)
+                d_fake_score_normalized = (d_fake_score - mean_out) / std_out
                 d_fake_loss = - torch.sigmoid(d_fake_score)
                 reg_d = self.weight_decay_d * self.D.norm()
                 d_loss = d_fake_loss + d_real_loss
@@ -76,8 +84,10 @@ class Mu(gan):
                 for _ in range(self.g_steps):
                     self.G.zero_grad()
                     x_fake = self.G(z_b.normal_())
-                    d_fake_score = self.D(x_fake)
-                    g_loss = torch.sigmoid(d_fake_score).mean()
+                    x_fake_normalized = (x_fake - mean_in) / std_in
+                    d_fake_score = self.D(x_fake_normalized)
+                    d_fake_score_normalized = (d_fake_score - mean_out) / std_out
+                    g_loss = torch.sigmoid(d_fake_score_normalized).mean()
                     reg = self.weight_decay_g * (self.G.est_mean - self.data_median).norm(p=2)**2
                     g_loss = g_loss + reg
                     g_loss.backward()
@@ -86,20 +96,25 @@ class Mu(gan):
             self.mean_err_record.append(
                 (self.G.est_mean.data - self.true_mean).norm(p=2).item()
             )
-            self.mean_est_record.append(self.G.est_mean.data)
+            self.mean_est_record.append(self.G.est_mean.data.numpy())
             self.loss_D.append(np.mean(loss_D_ep))
             self.loss_G.append(np.mean(loss_G_ep))
         self.mean_err_record = np.array(self.mean_err_record)
     
     def plot(self):
+        col = 4
+        row = 1
+        plt.figure(figsize=(25, 5))
+        plt.subplot(row, col, 1)
         plt.plot(self.loss_D)
         plt.title('loss_D')
-        plt.show()
-        
+        plt.subplot(row, col, 2)
         plt.plot(self.loss_G)
         plt.title('loss_G')
-        plt.show()
-        
+        plt.subplot(row, col, 3)
         plt.plot(self.mean_err_record)
         plt.title('Error')
+        plt.subplot(row, col, 4)
+        plt.plot(self.mean_est_record)
+        plt.title('Mean est record')
         plt.show()
