@@ -11,6 +11,7 @@ from torch.optim.lr_scheduler import StepLR
 import os
 import json
 
+
 class Sigma(gan):
     def __init__(self, data_dim, eps, device) -> None:
         super().__init__(data_dim, eps, device)
@@ -31,11 +32,12 @@ class Sigma(gan):
         
     def optimizer_init(self, lr_d, lr_g, d_steps, g_steps,
                        weight_decay_d=0, weight_decay_g=0,
-                       step_size=200, gamma=0.2):
+                       step_size=200, gamma=0.2,
+                       momentum=0.9):
         self.lr_d = lr_d
         self.lr_g = lr_g
-        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d)
-        self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g)
+        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d, momentum=momentum)
+        self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g, momentum=momentum)
         self.d_steps = d_steps
         self.g_steps = g_steps
         self.weight_decay_d = weight_decay_d
@@ -49,6 +51,7 @@ class Sigma(gan):
         self.loss_D = []
         self.loss_G = []
         self.sigma_err_record = []
+        self.sigma_fro_err_record = []
         self.sigma_est_record = []
         self.std_in_record = []
         self.std_out_record = []
@@ -68,11 +71,11 @@ class Sigma(gan):
                 x_real = data.to(self.device)
                 mean_in = x_real.mean(dim=0).detach()
                 std_in = torch.std(x_real, dim=0).detach() + 1e-6
-                x_real_normalized = (x_real - mean_in)/std_in
+                x_real_normalized = (x_real - mean_in) / std_in
                 d_real_score = self.D(x_real_normalized)
                 mean_out = d_real_score.mean(dim=0).detach()
                 std_out = torch.std(d_real_score, dim=0).detach() + 1e-6
-                d_real_score_normalized = (d_real_score - mean_out)/std_out
+                d_real_score_normalized = (d_real_score - mean_out) / std_out
                 d_real_score = torch.sigmoid(d_real_score_normalized)
                 # rcd
                 std_in_ep.append(std_in.cpu().detach().numpy())
@@ -80,9 +83,9 @@ class Sigma(gan):
                 
                 # G loss
                 x_fake = self.G(z_b.normal_())
-                x_fake_normalized = (x_fake - mean_in)/std_in
+                x_fake_normalized = (x_fake - mean_in) / std_in
                 d_fake_score = self.D(x_fake_normalized)
-                d_fake_score_normalized = (d_fake_score - mean_out)/std_out
+                d_fake_score_normalized = (d_fake_score - mean_out) / std_out
                 d_fake_score = - torch.sigmoid(d_fake_score_normalized)
                 d_loss = d_fake_score + d_real_score
                 reg_d = self.weight_decay_d * self.D.norm()
@@ -101,9 +104,9 @@ class Sigma(gan):
                 for _ in range(self.g_steps):
                     self.G.zero_grad()
                     x_fake = self.G(z_b.normal_())
-                    x_fake_normalized = (x_fake - mean_in)/std_in
+                    x_fake_normalized = (x_fake - mean_in) / std_in
                     d_fake_score = self.D(x_fake_normalized)
-                    d_fake_score_normalized = (d_fake_score - mean_out)/std_out
+                    d_fake_score_normalized = (d_fake_score - mean_out) / std_out
                     g_loss = torch.sigmoid(d_fake_score_normalized).mean()
                     reg = self.weight_decay_g * (self.G.est_sigma - self.G_init).norm(p=2) ** 2
                     g_loss = g_loss + reg
@@ -114,6 +117,9 @@ class Sigma(gan):
             self.sigma_err_record.append(
                 (self.G.est_cov() - self.true_cov).norm(p=2).item()
             )
+            self.sigma_fro_err_record.append(
+                (self.G.est_cov() - self.true_cov).norm(p='fro').item()
+            )
             self.D_record.append(
                 self.D.params.data.cpu().detach().numpy()
             )
@@ -123,6 +129,7 @@ class Sigma(gan):
             self.std_in_record.append(np.mean(std_in_ep))
             self.std_out_record.append(np.mean(std_out_ep))
         self.sigma_err_record = np.array(self.sigma_err_record)
+        self.sigma_fro_err_record = np.array(self.sigma_fro_err_record)
         self.sigma_est_record = np.array(self.sigma_est_record)
         self.D_record = np.array(self.D_record)
             
@@ -182,7 +189,9 @@ class Sigma(gan):
         plt.title('loss_G')
         
         plt.subplot(row, col, 3)
-        plt.plot(self.sigma_err_record)
+        plt.plot(self.sigma_err_record, label='op norm')
+        plt.plot(self.sigma_fro_err_record, label='fro norm')
+        plt.legend()
         plt.title('Error')
         
         plt.subplot(row, col, 4)
