@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import kendalltau, t, norm
+import os
 
 
 def kendall(X):
@@ -31,3 +32,10 @@ def ar_cov(data_dim):
         for j in range(data_dim):
             tmp_cov[i, j] = 2 ** (- abs(i - j))
     return tmp_cov
+
+
+def get_unique_folder_name(folder_path, suffix=1):
+    new_folder_path = f"{folder_path}_{suffix}"
+    if os.path.exists(new_folder_path):
+        return get_unique_folder_name(folder_path, suffix + 1)
+    return new_folder_path
