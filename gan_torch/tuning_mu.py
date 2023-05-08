@@ -13,22 +13,24 @@ os.makedirs(rcd_dir, exist_ok=True)
 
 
 def objective(trial):
-    lr_d = trial.suggest_float('lr_d', 1e-2, 1, log=True)
-    lr_g = trial.suggest_float('lr_g', 1e-2, 1, log=True)
+    lr_d = trial.suggest_float('lr_d', 1e-1, 1, log=True)
+    lr_g = trial.suggest_float('lr_g', 1e-1, 1, log=True)
     decay_d = trial.suggest_float('reg_d', 1e-5, 1e-1, log=True)
     decay_g = trial.suggest_float('reg_g', 1e-5, 1e-1, log=True)
+    batch_size = trial.suggest_categorical('batch_size', [125, 200, 250])
+    inner_loop = trial.suggest_categorical('inner_loop', [1, 2, 3, 4, 5])
     results = []
     for i in range(3):
         gan = Mu(data_dim, 0.1, 'cpu')
         true_mean = np.zeros(data_dim)
         out_mean = np.ones(data_dim) * 5
         gan.dist_init(true_mean, out_mean)
-        gan.data_init(1000, 25)
+        gan.data_init(1000, batch_size)
         gan.model_init(D_model='quadratic')
-        gan.optimizer_init(lr_d=lr_d, lr_g=lr_g, d_steps=5, g_steps=1, 
+        gan.optimizer_init(lr_d=lr_d, lr_g=lr_g, d_steps=inner_loop, g_steps=1,
                            weight_decay_d=decay_d, weight_decay_g=decay_g,
-                           scheduler='exp', gamma=0.995)
-        gan.fit(500)
+                           scheduler='exp', gamma=1)
+        gan.fit(300)
         intermediate_value = gan.mean_err_record[-10:].mean()
         trial.report(intermediate_value, i)
         if trial.should_prune():
