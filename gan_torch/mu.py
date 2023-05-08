@@ -31,9 +31,10 @@ class Mu(gan):
         
     def optimizer_init(self, lr_d, lr_g, d_steps, g_steps,
                        weight_decay_d=0, weight_decay_g=0,
-                       scheduler='exp' ,gamma=0.9, step_size=100):
-        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d)
-        self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g)
+                       scheduler='exp', gamma=0.9, step_size=100,
+                       momentum=0.9):
+        self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d, momentum=momentum)
+        self.G_optimizer = torch.optim.SGD(self.G.parameters(), lr=lr_g, momentum=momentum)
         self.d_steps = d_steps
         self.g_steps = g_steps
         self.weight_decay_d = weight_decay_d
@@ -118,9 +119,8 @@ class Mu(gan):
         last = self.mean_est_record[-self.check_num:]
         last = np.array(last)
         last_std = last.std(axis=0)
-        condition = np.linalg.norm(last_std, ord=2)/np.sqrt(self.data_dim) < self.threshold
+        condition = np.linalg.norm(last_std, ord=2) / np.sqrt(self.data_dim) < self.threshold
         return condition
-
 
     def plot(self):
         col = 4
