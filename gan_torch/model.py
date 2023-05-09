@@ -52,7 +52,7 @@ class Discriminator_sigma(nn.Module):
     def __init__(self, data_dim) -> None:
         super().__init__()
         self.data_dim = data_dim
-        matrix = torch.randn(self.data_dim, self.data_dim) * 0.01
+        matrix = torch.randn(self.data_dim, self.data_dim) * 0.1
         matrix = 0.5 * (matrix + matrix.T)
         self.params = nn.Parameter(matrix)
         self.bias = nn.Parameter(torch.zeros(1))
@@ -66,6 +66,9 @@ class Discriminator_sigma(nn.Module):
         A = self.params.norm(p=2) ** 2
         b = self.bias ** 2
         return A + b
+    
+    def get_par(self):
+        return self.params
     
     
 class Generator_sigma(nn.Module):

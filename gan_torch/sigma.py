@@ -10,6 +10,7 @@ from utils import kendall, get_unique_folder_name
 from torch.optim.lr_scheduler import StepLR
 import os
 import json
+from torch.nn.utils import clip_grad_norm_
 
 
 class Sigma(gan):
@@ -22,18 +23,18 @@ class Sigma(gan):
         
     def data_init(self, data_size, batch_size):
         super().data_init(data_size, batch_size)
-        self.true_cov = torch.tensor(self.true_cov, dtype=torch.float32).to(self.device)
+        self.true_cov = self.true_cov.clone().detach().float().to(self.device)
     
     def model_init(self):
         self.D = Discriminator_sigma(self.data_dim).to(self.device)
         self.G = Generator_sigma(self.data_dim).to(self.device)
-        self.G_init = torch.tensor(kendall(self.data.data.numpy())).to(self.device)
-        self.G.est_sigma.data = torch.tensor(self.G_init, dtype=torch.float32).to(self.device)
+        self.G_init = torch.tensor(kendall(self.data.data.numpy())).requires_grad_(False).to(self.device)
+        self.G.est_sigma.data = self.G_init.clone().clone().requires_grad_(True).float().to(self.device)
         
     def optimizer_init(self, lr_d, lr_g, d_steps, g_steps,
                        weight_decay_d=0, weight_decay_g=0,
                        step_size=200, gamma=0.2,
-                       momentum=0.9):
+                       momentum=0.9, clip_grad=0.1):
         self.lr_d = lr_d
         self.lr_g = lr_g
         self.D_optimizer = torch.optim.SGD(self.D.parameters(), lr=lr_d, momentum=momentum)
@@ -42,9 +43,11 @@ class Sigma(gan):
         self.g_steps = g_steps
         self.weight_decay_d = weight_decay_d
         self.weight_decay_g = weight_decay_g
-        self.scheduler = StepLR(self.G_optimizer, step_size=step_size, gamma=gamma)
+        self.G_scheduler = StepLR(self.G_optimizer, step_size=step_size, gamma=gamma)
+        self.D_scheduler = StepLR(self.D_optimizer, step_size=step_size, gamma=1)
         self.step_size = step_size
         self.gamma = gamma
+        self.clip_grad = clip_grad
         
     def fit(self, epochs):
         self.epoch = epochs
@@ -111,9 +114,11 @@ class Sigma(gan):
                     reg = self.weight_decay_g * (self.G.est_sigma - self.G_init).norm(p=2) ** 2
                     g_loss = g_loss + reg
                     g_loss.backward()
+                    clip_grad_norm_(self.G.parameters(), self.clip_grad)
                     loss_G_ep.append(g_loss.item())
                     self.G_optimizer.step()
-            self.scheduler.step()
+            self.G_scheduler.step()
+            self.D_scheduler.step()
             self.sigma_err_record.append(
                 (self.G.est_cov() - self.true_cov).norm(p=2).item()
             )
@@ -121,11 +126,12 @@ class Sigma(gan):
                 (self.G.est_cov() - self.true_cov).norm(p='fro').item()
             )
             self.D_record.append(
-                self.D.params.data.cpu().detach().numpy()
+                self.D.params.data.cpu().clone().numpy()
             )
-            self.sigma_est_record.append(self.G.est_cov().cpu().detach().numpy())
+            self.sigma_est_record.append(self.G.est_cov().cpu().clone().detach().numpy())
             self.loss_D.append(np.mean(loss_D_ep))
-            self.loss_G.append(np.mean(loss_G_ep))
+            if len(loss_G_ep) > 0:
+                self.loss_G.append(np.mean(loss_G_ep))
             self.std_in_record.append(np.mean(std_in_ep))
             self.std_out_record.append(np.mean(std_out_ep))
         self.sigma_err_record = np.array(self.sigma_err_record)
@@ -136,7 +142,7 @@ class Sigma(gan):
     def record(self, rcd_name):
         self.rcd_dir = f'record/sigma/{rcd_name}'
         if os.path.exists(self.rcd_dir):
-            self.rcd_dir = get_unique_folder_name(self.rcd_dir)    
+            self.rcd_dir = get_unique_folder_name(self.rcd_dir)
         os.makedirs(self.rcd_dir, exist_ok=True)
         
         # record config
