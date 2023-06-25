@@ -7,7 +7,7 @@ import os
 
 
 tuning_name = 'normed-lr-reg'
-data_dim = 50
+data_dim = 100
 rcd_dir = f'optuna/mu/{tuning_name}-{data_dim}/'
 os.makedirs(rcd_dir, exist_ok=True)
 
@@ -18,16 +18,17 @@ def objective(trial):
     decay_d = trial.suggest_float('reg_d', 1e-5, 1e-1, log=True)
     decay_g = trial.suggest_float('reg_g', 1e-5, 1e-1, log=True)
     batch_size = trial.suggest_categorical('batch_size', [125, 200, 250])
-    inner_loop = trial.suggest_categorical('inner_loop', [1, 2, 3, 4, 5])
+    d_steps = trial.suggest_categorical('inner_loop', range(10))
+    g_steps = trial.suggest_categorical('outer_loop', range(10))
     results = []
-    for i in range(3):
+    for i in range(10):
         gan = Mu(data_dim, 0.1, 'cpu')
         true_mean = np.zeros(data_dim)
         out_mean = np.ones(data_dim) * 5
         gan.dist_init(true_mean, out_mean)
         gan.data_init(1000, batch_size)
         gan.model_init(D_model='quadratic')
-        gan.optimizer_init(lr_d=lr_d, lr_g=lr_g, d_steps=inner_loop, g_steps=1,
+        gan.optimizer_init(lr_d=lr_d, lr_g=lr_g, d_steps=d_steps, g_steps=g_steps,
                            weight_decay_d=decay_d, weight_decay_g=decay_g,
                            scheduler='exp', gamma=1)
         gan.fit(300)
@@ -42,11 +43,14 @@ def objective(trial):
 if __name__ == "__main__":
     pruner = optuna.pruners.ThresholdPruner(upper=0.6)
     study = optuna.create_study(direction='minimize', pruner=pruner)
-    study.optimize(objective, n_trials=300)
+    study.optimize(objective, n_trials=1000)
     
     print(study.best_params)
     with open(f'{rcd_dir}best_params.txt', mode='w') as f:
         f.write(str(study.best_params))
+    
+    trials_df = study.trials_dataframe()
+    trials_df.to_csv(f'{rcd_dir}study_results.csv', index=False)
     
     # save fig
     fig = optuna_plot.plot_parallel_coordinate(study, params=["lr_d", "lr_g"])
