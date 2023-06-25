@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from model import Discriminator_linear, Discriminator_quadraric, Generator_mu
+from .model import Discriminator_linear, Discriminator_quadraric, Generator_mu
 from tqdm import trange
-from gan_torch import gan
+from .gan_torch import gan
 
 
 class Mu(gan):
@@ -122,6 +122,13 @@ class Mu(gan):
         condition = np.linalg.norm(last_std, ord=2) / np.sqrt(self.data_dim) < self.threshold
         return condition
 
+    def plot_error(self):
+        plt.plot(self.mean_err_record)
+        plt.title('Error')
+        plt.xlabel('Steps')
+        plt.ylabel('Error')
+        plt.show()
+    
     def plot(self):
         col = 4
         row = 1
