@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import kendalltau, t, norm
 import os
+import torch
 
 
 def kendall(X):
@@ -39,3 +40,7 @@ def get_unique_folder_name(folder_path, suffix=1):
     if os.path.exists(new_folder_path):
         return get_unique_folder_name(folder_path, suffix + 1)
     return new_folder_path
+
+
+def quad_form(x, A):
+    return torch.sum(x.matmul(A) * x, dim=1)
