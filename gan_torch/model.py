@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from .utils import quad_form
 
 
 #  models for estimating mean
@@ -58,12 +59,45 @@ class Discriminator_sigma(nn.Module):
         self.bias = nn.Parameter(torch.zeros(1))
         
     def forward(self, x):
-        Ax = torch.matmul(self.params, x.T)
-        x = torch.matmul(Ax, x)
+        x = quad_form(x, self.params)
         return x - self.bias
     
     def norm(self):
         A = self.params.norm(p=2) ** 2
+        b = self.bias ** 2
+        return A + b
+    
+    def get_par(self):
+        return self.params
+    
+    
+class Discriminator_sigma_complex(nn.Module):
+    def __init__(self, data_dim) -> None:
+        super().__init__()
+        self.data_dim = data_dim
+        matrix = torch.randn(self.data_dim, self.data_dim) * 0.1
+        matrix = 0.5 * (matrix + matrix.T)
+        self.params = nn.Parameter(matrix)
+        
+        matrix = torch.randn(self.data_dim, self.data_dim) * 0.1
+        matrix = 0.5 * (matrix + matrix.T)
+        self.params2 = nn.Parameter(matrix)
+                
+        self.param_linear = nn.Parameter(torch.randn(self.data_dim))
+        self.bias = nn.Parameter(torch.zeros(1))
+        
+    def forward(self, x):
+        x1 = quad_form(x, self.params)
+        x_sq = x ** 2
+        x2 = quad_form(x_sq, self.params2)
+        x_lin = torch.sum(x * self.param_linear, dim=1)
+        return x1 + x2 + x_lin - self.bias
+    
+    def norm(self):
+        A1 = self.params.norm(p='fro') ** 2
+        A2 = self.params2.norm(p='fro') ** 2
+        lin = self.param_linear.norm(p=2) ** 2
+        A = A1 + A2 + lin
         b = self.bias ** 2
         return A + b
     

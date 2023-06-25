@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from data import contaminated_data
-from model import Discriminator_linear, Discriminator_quadraric, Generator_mu
+from .data import contaminated_data
+from .model import Discriminator_linear, Discriminator_quadraric, Generator_mu
 from torch.utils.data import DataLoader
 from tqdm import trange
 
@@ -31,7 +31,7 @@ class gan():
                                       self.out_cov,
                                       self.eps)
         self.true_data = self.data.true_sumple
-        self._out_data = self.data.out_sumple
+        self.out_data = self.data.out_sumple
         self.batch_size = batch_size
         if self.device != 'cpu':
             self.dataloader = DataLoader(self.data,
