@@ -23,7 +23,7 @@ def kendall(X):
             corr[j, i] = corr[i, j]
     cov = s.reshape(p, 1) * corr * s.reshape(1, p)
     u, s, vt = np.linalg.svd(cov)
-    cov = np.matmul(np.diag(s)**(1/2), vt).T
+    cov = np.matmul(np.diag(s)**(1 / 2), vt).T
     return cov
 
 
