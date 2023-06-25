@@ -8,8 +8,8 @@ from utils import ar_cov
 import pandas as pd
 
 
-tuning_name = 'n50k-batch2500-full-tune-test'
-data_dim = 25
+tuning_name = 'n50k-batch2500-ord2'
+data_dim = 5
 rcd_dir = f'optuna/sigma/{tuning_name}-{data_dim}/'
 os.makedirs(rcd_dir, exist_ok=True)
 
@@ -28,8 +28,8 @@ def objective(trial):
         true_mean = np.zeros(data_dim)
         out_mean = np.ones(data_dim) * 6
         gan.dist_init(true_mean, out_mean, ar_cov(data_dim), ar_cov(data_dim))
-        gan.data_init(50000, 5000)
-        gan.model_init()
+        gan.data_init(50000, 2500)
+        gan.model_init(D_option='square')
         gan.optimizer_init(lr_d, lr_g, d_steps, g_steps, decay_d, decay_g,
                            step_size=40, gamma=0.2, momentum=momentum)
         gan.fit(150)
@@ -44,7 +44,7 @@ def objective(trial):
 if __name__ == "__main__":
     pruner = optuna.pruners.ThresholdPruner(upper=10)
     study = optuna.create_study(direction='minimize', pruner=pruner)
-    study.optimize(objective, n_trials=200)
+    study.optimize(objective, n_trials=1000)
     
     print(study.best_params)
     with open(f'{rcd_dir}best_params.txt', mode='w') as f:

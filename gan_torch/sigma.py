@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from data import contaminated_data
-from model import Discriminator_sigma, Generator_sigma
+from model import Discriminator_sigma, Generator_sigma, Discriminator_sigma_complex
 from torch.utils.data import DataLoader
 from tqdm import trange
 from gan_torch import gan
@@ -25,8 +25,11 @@ class Sigma(gan):
         super().data_init(data_size, batch_size)
         self.true_cov = self.true_cov.clone().detach().float().to(self.device)
     
-    def model_init(self):
-        self.D = Discriminator_sigma(self.data_dim).to(self.device)
+    def model_init(self, D_option='square', D_init_scale=1):
+        if D_option == 'square':
+            self.D = Discriminator_sigma(self.data_dim).to(self.device)
+        elif D_option == 'ord4':
+            self.D = Discriminator_sigma_complex(self.data_dim).to(self.device)
         self.G = Generator_sigma(self.data_dim).to(self.device)
         self.G_init = torch.tensor(kendall(self.data.data.numpy())).requires_grad_(False).to(self.device)
         self.G.est_sigma.data = self.G_init.clone().clone().requires_grad_(True).float().to(self.device)
@@ -51,15 +54,8 @@ class Sigma(gan):
         
     def fit(self, epochs):
         self.epoch = epochs
-        self.loss_D = []
-        self.loss_G = []
-        self.sigma_err_record = []
-        self.sigma_fro_err_record = []
-        self.sigma_est_record = []
-        self.std_in_record = []
-        self.std_out_record = []
-        self.D_record = []
-        z_b = torch.zeros(self.batch_size * 3, self.data_dim).to(self.device)
+        self.record_init()
+        z_b = torch.zeros(self.batch_size, self.data_dim).to(self.device)
         current_d_step = 1
         for ep in trange(epochs):
             loss_D_ep = []
@@ -119,26 +115,46 @@ class Sigma(gan):
                     self.G_optimizer.step()
             self.G_scheduler.step()
             self.D_scheduler.step()
-            self.sigma_err_record.append(
-                (self.G.est_cov() - self.true_cov).norm(p=2).item()
-            )
-            self.sigma_fro_err_record.append(
-                (self.G.est_cov() - self.true_cov).norm(p='fro').item()
-            )
-            self.D_record.append(
-                self.D.params.data.cpu().clone().numpy()
-            )
-            self.sigma_est_record.append(self.G.est_cov().cpu().clone().detach().numpy())
-            self.loss_D.append(np.mean(loss_D_ep))
-            if len(loss_G_ep) > 0:
-                self.loss_G.append(np.mean(loss_G_ep))
-            self.std_in_record.append(np.mean(std_in_ep))
-            self.std_out_record.append(np.mean(std_out_ep))
+            self.add_record(loss_D_ep, loss_G_ep, std_in_ep, std_out_ep)
         self.sigma_err_record = np.array(self.sigma_err_record)
         self.sigma_fro_err_record = np.array(self.sigma_fro_err_record)
         self.sigma_est_record = np.array(self.sigma_est_record)
         self.D_record = np.array(self.D_record)
-            
+
+    def record_init(self):
+        self.loss_D = []
+        self.loss_G = []
+        self.sigma_err_record = []
+        self.sigma_fro_err_record = []
+        self.sigma_est_record = []
+        self.std_in_record = []
+        self.std_out_record = []
+        self.D_record = []
+        self.D_true = []
+        self.D_out = []
+        self.D_z = []
+        
+    def add_record(self, loss_D_ep, loss_G_ep, std_in_ep, std_out_ep):
+        z_b = torch.zeros(self.batch_size, self.data_dim).to(self.device)
+        self.sigma_err_record.append(
+            (self.G.est_cov() - self.true_cov).norm(p=2).item()
+        )
+        self.sigma_fro_err_record.append(
+            (self.G.est_cov() - self.true_cov).norm(p='fro').item()
+        )
+        self.D_record.append(
+            self.D.params.data.cpu().clone().numpy()
+        )
+        self.sigma_est_record.append(self.G.est_cov().cpu().clone().detach().numpy())
+        self.loss_D.append(np.mean(loss_D_ep))
+        if len(loss_G_ep) > 0:
+            self.loss_G.append(np.mean(loss_G_ep))
+        self.D_true.append(self.D(torch.sigmoid(self.true_data)).mean().cpu().detach().numpy())
+        self.D_out.append(self.D(torch.sigmoid(self.out_data)).mean().cpu().detach().numpy())
+        self.D_z.append(self.D(self.G(z_b.normal_())).mean().cpu().detach().numpy())
+        self.std_in_record.append(np.mean(std_in_ep))
+        self.std_out_record.append(np.mean(std_out_ep))
+        
     def record(self, rcd_name):
         self.rcd_dir = f'record/sigma/{rcd_name}'
         if os.path.exists(self.rcd_dir):
@@ -213,6 +229,11 @@ class Sigma(gan):
         plt.subplot(row, col, 6)
         plt.plot(self.D_record.reshape(-1, self.data_dim ** 2))
         plt.title('D')
+        
+        plt.subplot(row, col, 7)
+        plt.plot(self.D_true, label='D_true')
+        plt.plot(self.D_out, label='D_out')
+        plt.title('D output')
         
         plt.savefig(f'{self.rcd_dir}/plot.png')
         plt.show()
