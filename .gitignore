@@ -1,2 +1,8 @@
 work/
+*cach*
 *.csv
+*.png
+*.txt
+*.npy
+*.json
+*.md
