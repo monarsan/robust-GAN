@@ -35,3 +35,14 @@ This repository includes the following files,
     ```
 
 4. You can now start running demo.ipynb.
+
+# Citation
+```
+@article{kanamori2023robust,
+  title={Robust Estimation for Kernel Exponential Families with
+Smoothed Total Variation Distances},
+  author={Kanamori, Takafumi and Kawashima, Takayuki and Yokoyama, Kodai},
+  pages={In preparation},
+}
+
+```
