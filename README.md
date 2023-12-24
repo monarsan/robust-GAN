@@ -41,7 +41,7 @@ This repository includes the following files,
 @article{kanamori2023robust,
   title={Robust Estimation for Kernel Exponential Families with
 Smoothed Total Variation Distances},
-  author={Kanamori, Takafumi and Kawashima, Takayuki and Yokoyama, Kodai},
+  author={Kanamori, Takafumi and Yokoyama, Kodai and Kawashima, Takayuki},
   pages={In preparation},
 }
 
